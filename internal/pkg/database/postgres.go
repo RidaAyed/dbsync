@@ -15,7 +15,7 @@ func (con *DBConnection) AddColumnsPostgres(tableName string, columns map[string
 
 		b.WriteString(" ADD IF NOT EXISTS ")
 		b.WriteString("\"" + key + "\" ")
-		b.WriteString(typeMap[con.DBType][value])
+		b.WriteString(con.toDBType(value))
 
 		if idx < len(columns)-1 {
 			b.WriteString(",")

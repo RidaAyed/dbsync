@@ -15,7 +15,7 @@ func (con *DBConnection) AddColumnsMySQL(tableName string, columns map[string]st
 
 		b.WriteString(" ADD ")
 		b.WriteString("`" + key + "` ")
-		b.WriteString(typeMap[con.DBType][value])
+		b.WriteString(con.toDBType(value))
 
 		if idx < len(columns)-1 {
 			b.WriteString(",")

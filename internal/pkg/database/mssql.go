@@ -16,7 +16,7 @@ func (con *DBConnection) AddColumnsMSSQL(tableName string, columns map[string]st
 	for key, value := range columns {
 
 		b.WriteString("[" + key + "] ")
-		b.WriteString(typeMap[con.DBType][value])
+		b.WriteString(con.toDBType(value))
 
 		if idx < len(columns)-1 {
 			b.WriteString(",")

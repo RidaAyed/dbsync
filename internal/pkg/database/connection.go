@@ -1,8 +1,12 @@
 package database
 
 import (
-	"fmt"
-	"os"
+	"bytes"
+	"encoding/json"
+	"log"
+	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mssql"
@@ -11,98 +15,147 @@ import (
 )
 
 type Contact struct {
-	ID           string `json:"$id" gorm:"primary_key"`
-	Ref          string `json:"$ref"`
-	Version      string `json:"$version"`
-	CampaignID   string `json:"$campaign_id"`
-	TaskID       string `json:"$task_id"`
-	Task         string `json:"$task"`
-	Status       string `json:"$status"`
-	StatusDetail string `json:"$status_detail"`
-	Phone        string `json:"$phone"`
-	CallerID     string `json:"$caller_id"`
-	CreatedDate  string `json:"$created_date"`
-	EntryDate    string `json:"$entry_date"`
-	FollowUpDate string `json:"$follow_up_date"`
-	Source       string `json:"$source"`
-	Comment      string `json:"$comment"`
-	Error        string `json:"$error"`
-	Trigger      string `json:"$trigger"`
-	Owner        string `json:"$owner"`
-	RecordingURL string `json:"$recording_url"`
-	Recording    string `json:"$recording"`
+	ID           string `json:"$id" gorm:"primary_key;column:$id"`
+	Hash         string `json:"-" gorm:"column:$hash"`
+	Ref          string `json:"$ref" gorm:"column:$ref"`
+	Version      string `json:"$version" gorm:"column:$version"`
+	CampaignID   string `json:"$campaign_id" gorm:"column:$campaign_id"`
+	TaskID       string `json:"$task_id" gorm:"column:$task_id"`
+	Task         string `json:"$task" gorm:"column:$task"`
+	Status       string `json:"$status" gorm:"column:$status"`
+	StatusDetail string `json:"$status_detail" gorm:"column:$status_detail"`
+	Phone        string `json:"$phone" gorm:"column:$phone"`
+	CallerID     string `json:"$caller_id" gorm:"column:$caller_id"`
+	CreatedDate  string `json:"$created_date" gorm:"column:$created_date"`
+	EntryDate    string `json:"$entry_date" gorm:"column:$entry_date"`
+	FollowUpDate string `json:"$follow_up_date" gorm:"column:$follow_up_date"`
+	Source       string `json:"$source" gorm:"column:$source"`
+	Comment      string `json:"$comment" gorm:"column:$comment"`
+	Error        string `json:"$error" gorm:"column:$error"`
+	Trigger      string `json:"$trigger" gorm:"column:$trigger"`
+	Owner        string `json:"$owner" gorm:"column:$owner"`
+	RecordingURL string `json:"$recording_url" gorm:"column:$recording_url"`
+	Recording    string `json:"$recording gorm:column:$recording"`
 }
 
 type Transaction struct {
-	ContactID       string       `json:"contact_id" gorm:"primary_key"`
-	Fired           string       `json:"fired" gorm:"primary_key"`
-	Type            string       `json:"type"`
-	TaskID          string       `json:"task_id"`
-	Task            string       `json:"task"`
-	Status          string       `json:"status"`
-	StatusDetail    string       `json:"status_detail"`
-	Actor           string       `json:"actor"`
-	Trigger         string       `json:"trigger"`
-	SequenceNr      int          `json:"sequence_nr"`
-	Phone           string       `json:"phone"`
-	User            string       `json:"user"`
-	IsHI            bool         `json:"isHI"`
-	UserLoginName   string       `json:"user_loginName"`
-	UserBranch      string       `json:"user_branch"`
-	UserTenantAlias string       `json:"user_tenantAlias"`
-	Revoked         bool         `json:"revoked"`
-	Dialergroup     string       `json:"dialergroup"`
-	Dialerdomain    string       `json:"dialerdomain"`
-	Clientaddress   string       `json:"clientaddress"`
-	StartedFrontend string       `json:"startedFrontend"`
-	Started         string       `json:"started"`
-	Technology      string       `json:"technology"`
-	Disconnected    string       `json:"disconnected"`
-	Result          string       `json:"result"`
-	WrapupTimeSec   int          `json:"wrapup_time_sec"`
-	Connections     []Connection `json:"connections"`
-	//Data            map[string]interface{} `json:"data" sql:"json"`
+	ID              string `json:"-" gorm:"primary_key;column:$id"`
+	Hash            string `json:"-" gorm:"column:$hash"`
+	ContactID       string `json:"-" gorm:"column:contact_id"`
+	Fired           string `json:"fired" gorm:"column:fired"`
+	Type            string `json:"type" gorm:"column:type"`
+	TaskID          string `json:"task_id" gorm:"column:task_id"`
+	Task            string `json:"task" gorm:"column:task"`
+	Status          string `json:"status" gorm:"column:status"`
+	StatusDetail    string `json:"status_detail" gorm:"column:status_detail"`
+	Actor           string `json:"actor" gorm:"column:actor"`
+	Trigger         string `json:"trigger" gorm:"column:trigger"`
+	SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
+	NextSequenceNr  int    `json:"next_sequence_nr" gorm:"column:next_sequence_nr"`
+	Phone           string `json:"phone" gorm:"column:phone"`
+	User            string `json:"user" gorm:"column:user"`
+	IsHI            bool   `json:"isHI" gorm:"column:ishi"`
+	UserLoginName   string `json:"user_loginName" gorm:"column:user_loginname"`
+	UserBranch      string `json:"user_branch" gorm:"column:user_branch"`
+	UserTenantAlias string `json:"user_tenantAlias" gorm:"column:user_tenantalias"`
+	Revoked         bool   `json:"revoked" gorm:"column:revoked"`
+	Dialergroup     string `json:"dialergroup" gorm:"column:dialergroup"`
+	Dialerdomain    string `json:"dialerdomain" gorm:"column:dialerdomain"`
+	Clientaddress   string `json:"clientaddress" gorm:"column:clientaddress"`
+	StartedFrontend string `json:"startedFrontend" gorm:"column:startedfrontend"`
+	Started         string `json:"started" gorm:"column:started"`
+	Technology      string `json:"technology" gorm:"column:technology"`
+	Disconnected    string `json:"disconnected" gorm:"column:disconnected"`
+	Result          string `json:"result" gorm:"column:result"`
+	WrapupTimeSec   int    `json:"wrapup_time_sec" gorm:"column:wrapup_time_sec"`
+	PauseTimeSec    int    `json:"pause_time_sec" gorm:"column:pause_time_sec"`
+	EditTimeSec     int    `json:"edit_time_sec" gorm:"column:edit_time_sec"`
+	//Data            map[string]interface{} `json:"data" sql:"type:json"` // JSON Datentyp wird von MSSQL nicht unterstützt
+	//Connections     []Connection `json:"connections" gorm:"column:connections`
+
 }
 
 type Connection struct {
-	Type            string      `json:"type"`
-	Dialergroup     string      `json:"dialergroup"`
-	Dialerdomain    string      `json:"dialerdomain"`
-	Clientaddress   string      `json:"clientaddress"`
-	Phone           string      `json:"phone"`
-	Actor           string      `json:"actor"`
-	Fired           string      `json:"fired"`
-	StartedFrontend string      `json:"startedFrontend"`
-	Started         string      `json:"started"`
-	Technology      string      `json:"technology"`
-	Connected       string      `json:"connected"`
-	Disconnected    string      `json:"disconnected"`
-	TaskID          string      `json:"task_id"`
-	SequenceNr      int         `json:"sequence_nr"`
-	User            string      `json:"user"`
-	Recordings      []Recording `json:"recordings"`
+	ID              string `json:"-" gorm:"primary_key;column:$id"`
+	Hash            string `json:"-" gorm:"column:$hash"`
+	TransactionID   string `json:"-" gorm:"column:transaction_id"`
+	Type            string `json:"type" gorm:"column:type"`
+	Dialergroup     string `json:"dialergroup" gorm:"column:dialergroup"`
+	Dialerdomain    string `json:"dialerdomain" gorm:"column:dialerdomain"`
+	Clientaddress   string `json:"clientaddress" gorm:"column:clientaddress"`
+	Phone           string `json:"phone" gorm:"column:phone"`
+	Actor           string `json:"actor" gorm:"column:actor"`
+	Fired           string `json:"fired" gorm:"column:fired"`
+	StartedFrontend string `json:"startedFrontend" gorm:"startedfrontend"`
+	Started         string `json:"started" gorm:"column:started"`
+	Technology      string `json:"technology" gorm:"column:technology"`
+	Connected       string `json:"connected" gorm:"column:connected"`
+	Disconnected    string `json:"disconnected" gorm:"column:disconnected"`
+	TaskID          string `json:"task_id" gorm:"column:task_id"`
+	SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
+	User            string `json:"user" gorm:"column:user"`
+	//Recordings      []Recording `json:"recordings" gorm:"column:recordings"`
 }
 
 type Recording struct {
-	Callnumber string `json:"callnumber"`
-	Filename   string `json:"filename"`
-	Started    string `json:"started"`
-	Stopped    string `json:"stopped"`
-	Location   string `json:"location"`
+	ID           string `json:"-" gorm:"primary_key;column:$id"`
+	Hash         string `json:"-" gorm:"column:$hash"`
+	ConnectionID string `json:"-" gorm:"column:connection_id"`
+	Callnumber   string `json:"callnumber" gorm:"column:callnumber"`
+	Filename     string `json:"filename " gorm:"column:filename"`
+	Started      string `json:"started" gorm:"started"`
+	Stopped      string `json:"stopped" gorm:"column:stopped"`
+	Location     string `json:"location" gorm:"column:location"`
 }
 
 type DBConnection struct {
-	db *gorm.DB
+	db     *gorm.DB
+	DBType string
+}
+
+var l *log.Logger
+
+var typeMap = map[string]map[string]string{
+	"mysql": {
+		"string":      "varchar(255)",
+		"int64":       "int",
+		"float64":     "float",
+		"json.Number": "float",
+		"bool":        "bool",
+		"map[string]interface {}": "json",
+	},
+	"postgres": {
+		"string":      "varchar(255)",
+		"int64":       "int",
+		"float64":     "float",
+		"json.Number": "float",
+		"bool":        "bool",
+		"map[string]interface {}": "json",
+	},
+	"mssql": {
+		"string":      "nvarchar(255)",
+		"int64":       "int",
+		"float64":     "float",
+		"json.Number": "float",
+		"bool":        "bool",
+		"map[string]interface {}": "nvarchar(2048)",
+	},
 }
 
 // URIs:
 // MYSQL: root:modimai1.Sfm@/df_ml_camp
 // POSTGRES: postgres://postgres:modimai1.Sfm@localhost:5432/df_ml_camp
 // MSSQL: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
-func Open(dbType string, uri string) *DBConnection {
+func Open(dbType string, uri string, logger *log.Logger) *DBConnection {
+
+	l = logger
 
 	db, err := gorm.Open(dbType, uri)
 	if err != nil {
+		panic(err)
+	}
+
+	if err = db.DB().Ping(); err != nil {
 		panic(err)
 	}
 
@@ -110,21 +163,171 @@ func Open(dbType string, uri string) *DBConnection {
 		return "df_" + defaultTableName
 	}
 
-	db.AutoMigrate(&Transaction{}, &Contact{})
+	db.AutoMigrate(&Contact{})
+	db.AutoMigrate(&Transaction{})
+	db.AutoMigrate(&Connection{})
+	db.AutoMigrate(&Recording{})
 
 	return &DBConnection{
-		db: db,
+		db:     db,
+		DBType: dbType,
 	}
 }
 
-func (con *DBConnection) UpsertContact(campaignID string, contact Contact) {
+func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) {
 
-	fmt.Fprintf(os.Stdout, "Upsert contact %v\n", contact.ID)
-	con.db.Save(&contact)
+	var columns = con.GetTableColumns(tableName)
+
+	l.Printf("Columns %v", columns)
+
+	// Filter $Felder und erste 100 Felder
+	var count = 0
+	var newColumns = map[string]string{}
+	var filteredData = map[string]interface{}{}
+	for f := range data {
+
+		var fieldName = strings.ToLower(f)                    // most DMBS are case insensitive
+		fieldName = strings.Replace(fieldName, "ß", "ss", -1) // MSSQL has problems with 'ß'
+
+		if strings.HasPrefix(fieldName, "$$") {
+			continue
+		}
+
+		if !strings.HasPrefix(fieldName, "$") {
+			count++
+		}
+
+		if columns[fieldName] == "" {
+			newColumns[fieldName] = reflect.TypeOf(data[f]).String()
+		}
+		filteredData[fieldName] = data[f]
+
+		if count == 100 {
+			break
+		}
+	}
+
+	if len(newColumns) > 0 {
+		con.AddColumns(tableName, newColumns)
+	}
+
+	var b bytes.Buffer
+
+	switch con.DBType {
+
+	case "mysql":
+		con.UpsertMySQL(tableName, filteredData, &b)
+
+	case "postgres":
+		con.UpsertPostgres(tableName, filteredData, &b)
+
+	case "mssql":
+		con.UpsertMSSQL(tableName, filteredData, &b)
+	}
+
+	l.Printf("%v\n\n", b.String())
+	con.db.Exec(b.String())
 }
 
-func (con *DBConnection) UpsertTransaction(campaignID string, transaction Transaction) {
+func (con *DBConnection) AddColumns(tableName string, newColumns map[string]string) {
 
-	fmt.Fprintf(os.Stdout, "Upsert transaction %v\n", transaction.ContactID+" | "+transaction.Fired)
-	con.db.Save(&transaction)
+	var b bytes.Buffer
+
+	switch con.DBType {
+
+	case "mysql":
+		con.AddColumnsMySQL(tableName, newColumns, &b)
+
+	case "postgres":
+		con.AddColumnsPostgres(tableName, newColumns, &b)
+
+	case "mssql":
+		con.AddColumnsMSSQL(tableName, newColumns, &b)
+	}
+
+	l.Printf("%v\n\n", b.String())
+	con.db.Exec(b.String())
+}
+
+func (con *DBConnection) toDBString(value interface{}) string {
+
+	switch value.(type) {
+
+	case json.Number:
+		if strings.Contains(string(value.(json.Number)), ".") {
+			vNum, _ := value.(json.Number).Float64()
+			return strconv.FormatFloat(vNum, 'f', 10, 64)
+		} else {
+			vNum, _ := value.(json.Number).Int64()
+			return strconv.FormatInt(vNum, 10)
+		}
+
+	case map[string]interface{}:
+		jsonString, err := json.Marshal(value)
+		if err != nil {
+			panic(err)
+		}
+		return "'" + string(jsonString) + "'"
+
+	case int:
+		return strconv.Itoa(value.(int))
+
+	case bool:
+		return strconv.FormatBool(value.(bool))
+
+	case string:
+		return "'" + value.(string) + "'"
+
+	default:
+		panic("unsupported type " + reflect.TypeOf(value).String())
+	}
+
+	return ""
+}
+
+func (con *DBConnection) toDBType(gotype string) string {
+
+	var dbType = typeMap[con.DBType][gotype]
+	if dbType == "" {
+		panic("unsupported type " + gotype)
+	}
+
+	return dbType
+}
+
+func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
+
+	// TODO: Datenbank selektieren
+
+	var stmt = ""
+
+	switch con.DBType {
+
+	case "mysql":
+		//var stmt = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'my_database' AND TABLE_NAME = 'my_table';"
+		stmt = "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName + "';"
+
+	case "mssql":
+		stmt = "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('" + tableName + "')"
+
+	case "postgres":
+		//var stmt = "SELECT * FROM information_schema.columns WHERE table_schema = 'your_schema' AND table_name   = 'your_table'"
+		stmt = "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName + "';"
+	}
+
+	rows, err := con.db.Raw(stmt).Rows()
+	if err != nil {
+		panic(err)
+	}
+
+	defer rows.Close()
+
+	var columns = map[string]string{}
+	var col string
+	for rows.Next() {
+		rows.Scan(&col)
+		columns[col] = col
+	}
+
+	return columns
 }
