@@ -3,7 +3,9 @@ package database
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -15,8 +17,8 @@ import (
 )
 
 type Contact struct {
-	ID           string `json:"$id" gorm:"primary_key;column:$id"`
-	Hash         string `json:"-" gorm:"column:$hash"`
+	ID string `json:"$id" gorm:"primary_key;column:$id"` // Primary key
+	//Hash         string `json:"-" gorm:"column:$hash"`
 	Ref          string `json:"$ref" gorm:"column:$ref"`
 	Version      string `json:"$version" gorm:"column:$version"`
 	CampaignID   string `json:"$campaign_id" gorm:"column:$campaign_id"`
@@ -39,9 +41,9 @@ type Contact struct {
 }
 
 type Transaction struct {
-	ID              string `json:"-" gorm:"primary_key;column:$id"`
-	Hash            string `json:"-" gorm:"column:$hash"`
-	ContactID       string `json:"-" gorm:"column:contact_id"`
+	ID string `json:"-" gorm:"primary_key;column:$id"` // Primary key
+	//Hash            string `json:"-" gorm:"column:$hash"`
+	ContactID       string `json:"-" gorm:"column:$contact_id"` // Foreign key -> Contact
 	Fired           string `json:"fired" gorm:"column:fired"`
 	Type            string `json:"type" gorm:"column:type"`
 	TaskID          string `json:"task_id" gorm:"column:task_id"`
@@ -50,15 +52,11 @@ type Transaction struct {
 	StatusDetail    string `json:"status_detail" gorm:"column:status_detail"`
 	Actor           string `json:"actor" gorm:"column:actor"`
 	Trigger         string `json:"trigger" gorm:"column:trigger"`
-	SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
-	NextSequenceNr  int    `json:"next_sequence_nr" gorm:"column:next_sequence_nr"`
 	Phone           string `json:"phone" gorm:"column:phone"`
 	User            string `json:"user" gorm:"column:user"`
-	IsHI            bool   `json:"isHI" gorm:"column:ishi"`
 	UserLoginName   string `json:"user_loginName" gorm:"column:user_loginname"`
 	UserBranch      string `json:"user_branch" gorm:"column:user_branch"`
 	UserTenantAlias string `json:"user_tenantAlias" gorm:"column:user_tenantalias"`
-	Revoked         bool   `json:"revoked" gorm:"column:revoked"`
 	Dialergroup     string `json:"dialergroup" gorm:"column:dialergroup"`
 	Dialerdomain    string `json:"dialerdomain" gorm:"column:dialerdomain"`
 	Clientaddress   string `json:"clientaddress" gorm:"column:clientaddress"`
@@ -67,18 +65,19 @@ type Transaction struct {
 	Technology      string `json:"technology" gorm:"column:technology"`
 	Disconnected    string `json:"disconnected" gorm:"column:disconnected"`
 	Result          string `json:"result" gorm:"column:result"`
+	IsHI            bool   `json:"isHI" gorm:"column:ishi"`
+	Revoked         bool   `json:"revoked" gorm:"column:revoked"`
 	WrapupTimeSec   int    `json:"wrapup_time_sec" gorm:"column:wrapup_time_sec"`
 	PauseTimeSec    int    `json:"pause_time_sec" gorm:"column:pause_time_sec"`
 	EditTimeSec     int    `json:"edit_time_sec" gorm:"column:edit_time_sec"`
-	//Data            map[string]interface{} `json:"data" sql:"type:json"` // JSON Datentyp wird von MSSQL nicht unterstützt
-	//Connections     []Connection `json:"connections" gorm:"column:connections`
-
+	//SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
+	//NextSequenceNr  int    `json:"next_sequence_nr" gorm:"column:next_sequence_nr"`
 }
 
 type Connection struct {
-	ID              string `json:"-" gorm:"primary_key;column:$id"`
-	Hash            string `json:"-" gorm:"column:$hash"`
-	TransactionID   string `json:"-" gorm:"column:transaction_id"`
+	ID string `json:"-" gorm:"primary_key;column:$id"` // Primary key
+	//Hash            string `json:"-" gorm:"column:$hash"`
+	TransactionID   string `json:"-" gorm:"column:$transaction_id"` // Foreign key -> Transaction
 	Type            string `json:"type" gorm:"column:type"`
 	Dialergroup     string `json:"dialergroup" gorm:"column:dialergroup"`
 	Dialerdomain    string `json:"dialerdomain" gorm:"column:dialerdomain"`
@@ -92,15 +91,14 @@ type Connection struct {
 	Connected       string `json:"connected" gorm:"column:connected"`
 	Disconnected    string `json:"disconnected" gorm:"column:disconnected"`
 	TaskID          string `json:"task_id" gorm:"column:task_id"`
-	SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
 	User            string `json:"user" gorm:"column:user"`
-	//Recordings      []Recording `json:"recordings" gorm:"column:recordings"`
+	//SequenceNr      int    `json:"sequence_nr" gorm:"column:sequence_nr"`
 }
 
 type Recording struct {
-	ID           string `json:"-" gorm:"primary_key;column:$id"`
-	Hash         string `json:"-" gorm:"column:$hash"`
-	ConnectionID string `json:"-" gorm:"column:connection_id"`
+	ID string `json:"-" gorm:"primary_key;column:$id"` // Primary key
+	//Hash         string `json:"-" gorm:"column:$hash"`
+	ConnectionID string `json:"-" gorm:"column:$connection_id"` // Foreign key -> Connection
 	Callnumber   string `json:"callnumber" gorm:"column:callnumber"`
 	Filename     string `json:"filename " gorm:"column:filename"`
 	Started      string `json:"started" gorm:"started"`
@@ -109,7 +107,7 @@ type Recording struct {
 }
 
 type DBConnection struct {
-	db     *gorm.DB
+	DB     *gorm.DB
 	DBType string
 }
 
@@ -117,7 +115,7 @@ var l *log.Logger
 
 var typeMap = map[string]map[string]string{
 	"mysql": {
-		"string":      "varchar(255)",
+		"string":      "varchar(1024)",
 		"int64":       "int",
 		"float64":     "float",
 		"json.Number": "float",
@@ -125,27 +123,27 @@ var typeMap = map[string]map[string]string{
 		"map[string]interface {}": "json",
 	},
 	"postgres": {
-		"string":      "varchar(255)",
+		"string":      "varchar(1024)",
 		"int64":       "int",
 		"float64":     "float",
 		"json.Number": "float",
 		"bool":        "bool",
 		"map[string]interface {}": "json",
 	},
-	"mssql": {
-		"string":      "nvarchar(255)",
+	"sqlserver": {
+		"string":      "nvarchar(1024)",
 		"int64":       "int",
 		"float64":     "float",
 		"json.Number": "float",
 		"bool":        "bool",
-		"map[string]interface {}": "nvarchar(2048)",
+		"map[string]interface {}": "nvarchar(4000)", // Maximum
 	},
 }
 
 // URIs:
 // MYSQL: root:modimai1.Sfm@/df_ml_camp
 // POSTGRES: postgres://postgres:modimai1.Sfm@localhost:5432/df_ml_camp
-// MSSQL: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
+// SQLSERVER: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
 func Open(dbType string, uri string, logger *log.Logger) *DBConnection {
 
 	l = logger
@@ -163,22 +161,23 @@ func Open(dbType string, uri string, logger *log.Logger) *DBConnection {
 		return "df_" + defaultTableName
 	}
 
+	// Create tables
 	db.AutoMigrate(&Contact{})
 	db.AutoMigrate(&Transaction{})
 	db.AutoMigrate(&Connection{})
 	db.AutoMigrate(&Recording{})
 
 	return &DBConnection{
-		db:     db,
+		DB:     db,
 		DBType: dbType,
 	}
 }
 
-func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) {
+func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) error {
 
 	var columns = con.GetTableColumns(tableName)
 
-	l.Printf("Columns %v", columns)
+	//l.Printf("Columns %v", columns)
 
 	// Filter $Felder und erste 100 Felder
 	var count = 0
@@ -187,7 +186,7 @@ func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) {
 	for f := range data {
 
 		var fieldName = strings.ToLower(f)                    // most DMBS are case insensitive
-		fieldName = strings.Replace(fieldName, "ß", "ss", -1) // MSSQL has problems with 'ß'
+		fieldName = strings.Replace(fieldName, "ß", "ss", -1) // SQLSERVER has problems with 'ß'
 
 		if strings.HasPrefix(fieldName, "$$") {
 			continue
@@ -221,12 +220,13 @@ func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) {
 	case "postgres":
 		con.UpsertPostgres(tableName, filteredData, &b)
 
-	case "mssql":
-		con.UpsertMSSQL(tableName, filteredData, &b)
+	case "sqlserver":
+		con.UpsertSQLServer(tableName, filteredData, &b)
 	}
 
-	l.Printf("%v\n\n", b.String())
-	con.db.Exec(b.String())
+	//l.Printf("%v\n\n", b.String())
+	_, err := con.DB.DB().Exec(b.String())
+	return err
 }
 
 func (con *DBConnection) AddColumns(tableName string, newColumns map[string]string) {
@@ -241,12 +241,16 @@ func (con *DBConnection) AddColumns(tableName string, newColumns map[string]stri
 	case "postgres":
 		con.AddColumnsPostgres(tableName, newColumns, &b)
 
-	case "mssql":
-		con.AddColumnsMSSQL(tableName, newColumns, &b)
+	case "sqlserver":
+		con.AddColumnsSQLServer(tableName, newColumns, &b)
 	}
 
-	l.Printf("%v\n\n", b.String())
-	con.db.Exec(b.String())
+	//l.Printf("%v\n\n", b.String())
+	_, err := con.DB.DB().Exec(b.String())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ALTER TABLE ERROR: %v | %v\n", tableName, err.Error())
+		//panic(err.Error())
+	}
 }
 
 func (con *DBConnection) toDBString(value interface{}) string {
@@ -307,7 +311,7 @@ func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
 		//var stmt = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'my_database' AND TABLE_NAME = 'my_table';"
 		stmt = "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName + "';"
 
-	case "mssql":
+	case "sqlserver":
 		stmt = "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID('" + tableName + "')"
 
 	case "postgres":
@@ -315,7 +319,7 @@ func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
 		stmt = "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName + "';"
 	}
 
-	rows, err := con.db.Raw(stmt).Rows()
+	rows, err := con.DB.Raw(stmt).Rows()
 	if err != nil {
 		panic(err)
 	}

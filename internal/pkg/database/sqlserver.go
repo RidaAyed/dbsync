@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (con *DBConnection) AddColumnsMSSQL(tableName string, columns map[string]string, b *bytes.Buffer) {
+func (con *DBConnection) AddColumnsSQLServer(tableName string, columns map[string]string, b *bytes.Buffer) {
 
 	b.WriteString("ALTER TABLE ")
 	b.WriteString(tableName)
@@ -26,7 +26,7 @@ func (con *DBConnection) AddColumnsMSSQL(tableName string, columns map[string]st
 	b.WriteString(";")
 }
 
-func (con *DBConnection) InsertMSSQL(tableName string, values map[string]interface{}, b *bytes.Buffer) {
+func (con *DBConnection) InsertSQLServer(tableName string, values map[string]interface{}, b *bytes.Buffer) {
 
 	// Convert keys and values to string array
 	var cols []string
@@ -34,7 +34,7 @@ func (con *DBConnection) InsertMSSQL(tableName string, values map[string]interfa
 	for col := range values {
 		cols = append(cols, "["+col+"]")
 
-		// MSSQL unterstützt keine Bools
+		// SQLServer unterstützt keine Bools
 		if reflect.TypeOf(values[col]).Kind() == reflect.Bool {
 			if values[col] == true {
 				values[col] = 1
@@ -67,7 +67,7 @@ func (con *DBConnection) InsertMSSQL(tableName string, values map[string]interfa
 	b.WriteString(";")
 }
 
-func (con *DBConnection) UpsertMSSQL(tableName string, values map[string]interface{}, b *bytes.Buffer) {
+func (con *DBConnection) UpsertSQLServer(tableName string, values map[string]interface{}, b *bytes.Buffer) {
 
 	// Convert keys and values to string array
 	var cols []string
@@ -76,7 +76,7 @@ func (con *DBConnection) UpsertMSSQL(tableName string, values map[string]interfa
 	for col := range values {
 		cols = append(cols, "["+col+"]")
 
-		// MSSQL unterstützt keine Bools
+		// SQLServer unterstützt keine Bools
 		if reflect.TypeOf(values[col]).Kind() == reflect.Bool {
 			if values[col] == true {
 				values[col] = 1
