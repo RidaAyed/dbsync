@@ -27,9 +27,10 @@ import (
 const (
 	batchSizeContactFetch = 30 // specifies the number of contacts that should be fetched in one request
 	//baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
-	baseURL               = "https://api-xdot-dialfire-xdot-com"
-	tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	//tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
 
+	baseURL               = "https://api.dialfire.com"
+	tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
 )
 
 var (
@@ -99,9 +100,11 @@ func saveConfig() {
 }
 
 /*******************************************
-* CLEANUP TASKS (ON KILL)
+* teardown TASKS (ON KILL)
 ********************************************/
-func cleanup() {
+func teardown() {
+
+	// Close database connection
 
 	// Write configuration
 	saveConfig()
@@ -122,7 +125,7 @@ func main() {
 		syscall.SIGTERM)
 	go func() {
 		<-c
-		cleanup()
+		teardown()
 		os.Exit(1)
 	}()
 
@@ -276,6 +279,7 @@ func modeWebhook(startDate string) {
 		go webhookSender(i, &wg4)
 	}
 
+	// Runs forever
 	ticker()
 }
 
@@ -425,8 +429,8 @@ func modeDatabaseInit(dbType string, dbURI string) {
 	wg4.Wait()
 	l.Println("Database update DONE")
 
-	// Close database connection
-	db.DB.Close()
+	// Cleanup
+	teardown()
 }
 
 /*******************************************
@@ -479,8 +483,8 @@ func modeDatabaseUpdate(dbType string, dbURI string, startDate string) {
 	wg5.Wait()
 	l.Println("Database update DONE")
 
-	// Close database connection
-	db.DB.Close()
+	// Cleanup
+	teardown()
 }
 
 /*******************************************
@@ -520,8 +524,8 @@ func modeDatabaseSync(dbType string, dbURI string, startDate string) {
 
 	ticker()
 
-	// Close database connection
-	db.DB.Close()
+	// Cleanup
+	teardown()
 }
 
 /*******************************************
@@ -529,7 +533,7 @@ func modeDatabaseSync(dbType string, dbURI string, startDate string) {
 ********************************************/
 func listContacts(cursor string) ([]byte, error) {
 
-	url := baseURL + "/!" + tokenRawContactReader + "/data/campaigns/" + campaignID + "/contacts/?_type_=f&_limit_=" + strconv.Itoa(batchSizeContactFetch) + "&_name___GT=" + cursor
+	url := baseURL + "/data/campaigns/" + campaignID + "/contacts/?_type_=f&_limit_=" + strconv.Itoa(batchSizeContactFetch) + "&_name___GT=" + cursor
 
 	l.Printf("List Contacts: %v\n", url)
 
@@ -537,6 +541,7 @@ func listContacts(cursor string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+tokenRawContactReader)
 
 	var resp *http.Response
 	for i := 0; i < 10; i++ {
@@ -570,7 +575,7 @@ func listContacts(cursor string) ([]byte, error) {
 
 func getContacts(contactIDs []string) ([]byte, error) {
 
-	url := baseURL + "/!" + campaignToken + "/api/campaigns/" + campaignID + "/contacts/flat_view"
+	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/flat_view"
 
 	l.Printf("Get Contacts: %v\n", url)
 	//l.Printf("Data: %v\n", contactIDs)
@@ -584,6 +589,7 @@ func getContacts(contactIDs []string) ([]byte, error) {
 	if req, err = http.NewRequest("POST", url, bytes.NewReader(data)); err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+campaignToken)
 
 	var resp *http.Response
 	for i := 0; i < 10; i++ {
@@ -622,7 +628,7 @@ func getContacts(contactIDs []string) ([]byte, error) {
 // Parameters: from string, to string, cursor string
 func getTransactions(params map[string]string) ([]byte, error) {
 
-	url := baseURL + "/!" + campaignToken + "/api/campaigns/" + campaignID + "/contacts/transactions/?"
+	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/transactions/?"
 
 	//l.Printf("Params %v", params)
 
@@ -645,6 +651,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 	if req, err = http.NewRequest("GET", url, nil); err != nil {
 		return nil, err
 	}
+	req.Header.Set("Authorization", "Bearer "+campaignToken)
 
 	var resp *http.Response
 	for i := 0; i < 10; i++ {
@@ -935,7 +942,12 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 				var entry = taskLog[tlIdx].(map[string]interface{})
 				var transactions = entry["transactions"].([]interface{})
 				var transaction = transactions[taIdx].(map[string]interface{})
-				transaction["$id"] = hash(contact["$id"].(string) + transaction["fired"].(string) + transaction["sequence_nr"].(json.Number).String())
+
+				var tid = contact["$id"].(string) + transaction["fired"].(string)
+				if transaction["sequence_nr"] != nil {
+					tid += transaction["sequence_nr"].(json.Number).String()
+				}
+				transaction["$id"] = hash(tid)
 				transaction["$contact_id"] = contact["$id"].(string)
 
 				insertTransaction(transaction)
@@ -951,7 +963,12 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 				for _, tran := range transactions {
 
 					var transaction = tran.(map[string]interface{})
-					transaction["$id"] = hash(contact["$id"].(string) + transaction["fired"].(string) + transaction["sequence_nr"].(json.Number).String())
+
+					var tid = contact["$id"].(string) + transaction["fired"].(string)
+					if transaction["sequence_nr"] != nil {
+						tid += transaction["sequence_nr"].(json.Number).String()
+					}
+					transaction["$id"] = hash(tid)
 					transaction["$contact_id"] = contact["$id"].(string)
 
 					insertTransaction(transaction)

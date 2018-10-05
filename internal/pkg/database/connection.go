@@ -121,6 +121,7 @@ var typeMap = map[string]map[string]string{
 		"json.Number": "float",
 		"bool":        "bool",
 		"map[string]interface {}": "json",
+		"[]interface {}":          "json",
 	},
 	"postgres": {
 		"string":      "varchar(1024)",
@@ -129,6 +130,7 @@ var typeMap = map[string]map[string]string{
 		"json.Number": "float",
 		"bool":        "bool",
 		"map[string]interface {}": "json",
+		"[]interface {}":          "json",
 	},
 	"sqlserver": {
 		"string":      "nvarchar(1024)",
@@ -137,18 +139,26 @@ var typeMap = map[string]map[string]string{
 		"json.Number": "float",
 		"bool":        "bool",
 		"map[string]interface {}": "nvarchar(4000)", // Maximum
+		"[]interface {}":          "nvarchar(4000)", // Maximum
 	},
 }
 
 // URIs:
 // MYSQL: root:modimai1.Sfm@/df_ml_camp
 // POSTGRES: postgres://postgres:modimai1.Sfm@localhost:5432/df_ml_camp
-// SQLSERVER: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
+// MSSQL: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
 func Open(dbType string, uri string, logger *log.Logger) *DBConnection {
 
 	l = logger
 
-	db, err := gorm.Open(dbType, uri)
+	var db *gorm.DB
+	var err error
+	if dbType == "sqlserver" {
+		db, err = gorm.Open("mssql", uri)
+	} else {
+		db, err = gorm.Open(dbType, uri)
+	}
+
 	if err != nil {
 		panic(err)
 	}
@@ -265,6 +275,13 @@ func (con *DBConnection) toDBString(value interface{}) string {
 			vNum, _ := value.(json.Number).Int64()
 			return strconv.FormatInt(vNum, 10)
 		}
+
+	case []interface{}:
+		jsonString, err := json.Marshal(value)
+		if err != nil {
+			panic(err)
+		}
+		return "'" + string(jsonString) + "'"
 
 	case map[string]interface{}:
 		jsonString, err := json.Marshal(value)
