@@ -2,20 +2,24 @@ package database
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
-	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mssql"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
+	_ "github.com/denisenkom/go-mssqldb"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
 
+type DBConnection struct {
+	DB     *sql.DB
+	DBType string
+}
+
+/*
 type Contact struct {
 	ID string `json:"$id" gorm:"primary_key;column:$id"` // Primary key
 	//Hash         string `json:"-" gorm:"column:$hash"`
@@ -60,7 +64,7 @@ type Transaction struct {
 	Dialergroup     string `json:"dialergroup" gorm:"column:dialergroup"`
 	Dialerdomain    string `json:"dialerdomain" gorm:"column:dialerdomain"`
 	Clientaddress   string `json:"clientaddress" gorm:"column:clientaddress"`
-	StartedFrontend string `json:"startedFrontend" gorm:"column:startedfrontend"`
+	StartedFrontend string `json:"startedFrontend" gorm:"column:startedFrontend"`
 	Started         string `json:"started" gorm:"column:started"`
 	Technology      string `json:"technology" gorm:"column:technology"`
 	Disconnected    string `json:"disconnected" gorm:"column:disconnected"`
@@ -85,7 +89,7 @@ type Connection struct {
 	Phone           string `json:"phone" gorm:"column:phone"`
 	Actor           string `json:"actor" gorm:"column:actor"`
 	Fired           string `json:"fired" gorm:"column:fired"`
-	StartedFrontend string `json:"startedFrontend" gorm:"startedfrontend"`
+	StartedFrontend string `json:"startedFrontend" gorm:"startedFrontend"`
 	Started         string `json:"started" gorm:"column:started"`
 	Technology      string `json:"technology" gorm:"column:technology"`
 	Connected       string `json:"connected" gorm:"column:connected"`
@@ -105,165 +109,324 @@ type Recording struct {
 	Stopped      string `json:"stopped" gorm:"column:stopped"`
 	Location     string `json:"location" gorm:"column:location"`
 }
+*/
 
-type DBConnection struct {
-	DB     *gorm.DB
-	DBType string
+var tableSchemas = map[string][]map[string]string{
+	"contact": {
+		{"$id": "string"},
+		{"$ref": "string"},
+		{"$version": "string"},
+		{"$campaign_id": "string"},
+		{"$task_id": "string"},
+		{"$task": "string"},
+		{"$status": "string"},
+		{"$status_detail": "string"},
+		{"$phone": "string"},
+		{"$caller_id": "string"},
+		{"$created_date": "string"},
+		{"$entry_date": "string"},
+		{"$follow_up_date": "string"},
+		{"$source": "string"},
+		{"$comment": "string"},
+		{"$error": "string"},
+		{"$trigger": "string"},
+		{"$owner": "string"},
+		{"$recording_url": "string"},
+		{"$recording": "string"},
+	},
+	"transaction": []map[string]string{
+		{"$id": "string"},
+		{"$contact_id": "string"},
+		{"fired": "string"},
+		{"type": "string"},
+		{"task_id": "string"},
+		{"task": "string"},
+		{"status": "string"},
+		{"status_detail": "string"},
+		{"actor": "string"},
+		{"trigger": "string"},
+		{"phone": "string"},
+		{"user": "string"},
+		{"user_loginName": "string"},
+		{"user_branch": "string"},
+		{"user_tenantAlias": "string"},
+		{"dialergroup": "string"},
+		{"dialerdomain": "string"},
+		{"clientaddress": "string"},
+		{"startedFrontend": "string"},
+		{"started": "string"},
+		{"technology": "string"},
+		{"disconnected": "string"},
+		{"result": "string"},
+		{"isHI": "bool"},
+		{"revoked": "bool"},
+		{"wrapup_time_sec": "int"},
+		{"pause_time_sec": "int"},
+		{"edit_time_sec": "int"},
+	},
+	"connection": []map[string]string{
+		{"$id": "string"},
+		{"$transaction_id": "string"},
+		{"type": "string"},
+		{"dialergroup": "string"},
+		{"dialerdomain": "string"},
+		{"clientaddress": "string"},
+		{"phone": "string"},
+		{"actor": "string"},
+		{"fired": "string"},
+		{"startedFrontend": "string"},
+		{"started": "string"},
+		{"technology": "string"},
+		{"connected": "string"},
+		{"disconnected": "string"},
+		{"task_id": "string"},
+		{"user": "string"},
+	},
+	"recording": []map[string]string{
+		{"$id": "string"},
+		{"$connection_id": "string"},
+		{"callnumber": "string"},
+		{"filename": "string"},
+		{"started": "string"},
+		{"stopped": "string"},
+		{"location": "string"},
+	},
 }
-
-var l *log.Logger
 
 var typeMap = map[string]map[string]string{
 	"mysql": {
-		"string":      "varchar(1024)",
-		"int64":       "int",
+		"string":      "varchar(255)",
+		"int":         "bigint",
 		"float64":     "float",
 		"json.Number": "float",
-		"bool":        "bool",
+		"bool":        "bit",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"postgres": {
-		"string":      "varchar(1024)",
-		"int64":       "int",
-		"float64":     "float",
-		"json.Number": "float",
-		"bool":        "bool",
+		"string":      "text",
+		"int":         "bigint",
+		"float64":     "decimal",
+		"json.Number": "decimal",
+		"bool":        "boolean",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"sqlserver": {
-		"string":      "nvarchar(1024)",
-		"int64":       "int",
+		"string":      "nvarchar(255)",
+		"int":         "bigint",
 		"float64":     "float",
 		"json.Number": "float",
-		"bool":        "bool",
+		"bool":        "bit",
 		"map[string]interface {}": "nvarchar(4000)", // Maximum
 		"[]interface {}":          "nvarchar(4000)", // Maximum
 	},
 }
 
+var l func(level int, msg string, args ...interface{})
+
 // URIs:
 // MYSQL: root:modimai1.Sfm@/df_ml_camp
 // POSTGRES: postgres://postgres:modimai1.Sfm@localhost:5432/df_ml_camp
 // MSSQL: sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp
-func Open(dbType string, uri string, logger *log.Logger) *DBConnection {
+func Open(dbType string, uri string, logger func(level int, msg string, args ...interface{})) (*DBConnection, error) {
 
 	l = logger
 
-	var db *gorm.DB
+	var db *sql.DB
 	var err error
-	if dbType == "sqlserver" {
-		db, err = gorm.Open("mssql", uri)
-	} else {
-		db, err = gorm.Open(dbType, uri)
+
+	//MySQL: 'root:modimai1.Sfm@localhost:3306/df_ml_camp'
+	//Postgres: 'postgres://postgres:modimai1.Sfm@localhost:5432/df_ml_camp"
+	//"sqlserver://sa:modimai1.Sfm@localhost:1433?database=df_ml_camp"
+
+	switch dbType {
+
+	case "mysql":
+		// Remove protocol prefix (not allowed with mysql)
+		var idx1 = strings.Index(uri, "://")
+		//var idx2 = strings.Index(uri, "@")
+		//var idx3 = strings.LastIndex(uri, "/")
+		//uri = uri[idx1+3:idx2+1] + "tcp(" + uri[idx2+1:idx3] + ")" + uri[idx3:]
+		uri = uri[idx1+3:]
+		l(0, "Connect to %v\n", uri)
+		db, err = sql.Open("mysql", uri)
+
+	case "sqlserver":
+		var dbIdx = strings.LastIndex(uri, "/")
+		uri = uri[:dbIdx] + "?database=" + uri[dbIdx+1:]
+		l(0, "Connect to %v\n", uri)
+		db, err = sql.Open("mssql", uri)
+
+	case "postgres":
+		// Remove protocol prefix (not allowed with postgres)
+		//var idx1 = strings.Index(uri, "://")
+		//uri = uri[idx1+3:]
+		l(0, "Connect to %v\n", uri)
+		db, err = sql.Open("postgres", uri)
 	}
 
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	if err = db.DB().Ping(); err != nil {
-		panic(err)
+	if err = db.Ping(); err != nil {
+		return nil, err
 	}
 
-	gorm.DefaultTableNameHandler = func(db *gorm.DB, defaultTableName string) string {
-		return "df_" + defaultTableName
-	}
-
-	// Create tables
-	db.AutoMigrate(&Contact{})
-	db.AutoMigrate(&Transaction{})
-	db.AutoMigrate(&Connection{})
-	db.AutoMigrate(&Recording{})
-
-	return &DBConnection{
+	var con = DBConnection{
 		DB:     db,
 		DBType: dbType,
 	}
+
+	return &con, nil
 }
 
-func (con *DBConnection) Upsert(tableName string, data map[string]interface{}) error {
+type Entity struct {
+	Type string
+	Data map[string]interface{}
+}
 
-	var columns = con.GetTableColumns(tableName)
+func (con *DBConnection) CreateTable(tableName string, columns []map[string]string) error {
 
-	//l.Printf("Columns %v", columns)
+	var b bytes.Buffer
 
-	// Filter $Felder und erste 100 Felder
+	switch con.DBType {
+
+	case "mysql":
+		con.CreateTableMySQL(tableName, columns, &b)
+
+	case "postgres":
+		con.CreateTablePostgres(tableName, columns, &b)
+
+	case "sqlserver":
+		con.CreateTableSQLServer(tableName, columns, &b)
+	}
+
+	//l(0, "%v\n\n", b.String())
+	_, err := con.DB.Exec(b.String())
+	if err != nil {
+		l(4, "%v\n", b.String())
+		l(4, "%v \n", err.Error())
+	}
+	return err
+}
+
+func (con *DBConnection) Upsert(entity Entity) error {
+
+	var b bytes.Buffer
+
+	var tableName = "df_" + entity.Type + "s"
+	var data = filter(entity)
+
+	switch con.DBType {
+
+	case "mysql":
+		con.UpsertMySQL(tableName, data, &b)
+
+	case "postgres":
+		con.UpsertPostgres(tableName, data, &b)
+
+	case "sqlserver":
+		con.UpsertSQLServer(tableName, data, &b)
+	}
+
+	//l(0, "%v\n\n", b.String())
+	_, err := con.DB.Exec(b.String())
+	if err != nil {
+		l(4, "%v\n", b.String())
+		l(4, "%v \n", err.Error())
+	}
+	return err
+}
+
+func filter(entity Entity) map[string]interface{} {
+
+	var filteredData = make(map[string]interface{})
+
+	for _, col := range tableSchemas[entity.Type] {
+
+		// Sanitize field name
+		//var fieldName = strings.ToLower(f)                    // most DMBS are case insensitive
+		//fieldName = strings.Replace(fieldName, "ß", "ss", -1) // SQLSERVER has problems with 'ß'
+
+		for cName, _ := range col {
+			if entity.Data[cName] != nil {
+				filteredData[cName] = entity.Data[cName]
+			}
+		}
+	}
+
+	return filteredData
+}
+
+type Campaign struct {
+	Form struct {
+		Elements []struct {
+			Type      string `json:"type"`
+			FieldType string `json:"fieldType"`
+			Name      string `json:"name"`
+			State     string `json:"state"`
+		} `json:"elements"`
+	} `json:"form"`
+}
+
+func (con *DBConnection) UpdateTables(campaign Campaign) {
+
+	// Maximal 100 weitere Spalten
 	var count = 0
-	var newColumns = map[string]string{}
-	var filteredData = map[string]interface{}{}
-	for f := range data {
+	for _, element := range campaign.Form.Elements {
 
-		var fieldName = strings.ToLower(f)                    // most DMBS are case insensitive
-		fieldName = strings.Replace(fieldName, "ß", "ss", -1) // SQLSERVER has problems with 'ß'
-
-		if strings.HasPrefix(fieldName, "$$") {
+		if element.Type != "field" || element.State == "hidden" {
 			continue
 		}
 
-		if !strings.HasPrefix(fieldName, "$") {
-			count++
-		}
+		tableSchemas["contact"] = append(tableSchemas["contact"], map[string]string{element.Name: "string"})
+		count++
 
-		if columns[fieldName] == "" {
-			newColumns[fieldName] = reflect.TypeOf(data[f]).String()
-		}
-		filteredData[fieldName] = data[f]
-
+		// Maximal 100 Elemente
 		if count == 100 {
 			break
 		}
 	}
 
-	if len(newColumns) > 0 {
-		con.AddColumns(tableName, newColumns)
-	}
+	// ggf. Tabellen erzeugen
+	con.createTable("df_contacts", tableSchemas["contact"])
+	con.createTable("df_transactions", tableSchemas["transaction"])
+	con.createTable("df_connections", tableSchemas["connection"])
+	con.createTable("df_recordings", tableSchemas["recording"])
+
+	con.updateColumns("df_contacts", tableSchemas["contact"])
+}
+
+func (con *DBConnection) createTable(tableName string, columns []map[string]string) error {
 
 	var b bytes.Buffer
 
 	switch con.DBType {
 
 	case "mysql":
-		con.UpsertMySQL(tableName, filteredData, &b)
+		con.CreateTableMySQL(tableName, columns, &b)
 
 	case "postgres":
-		con.UpsertPostgres(tableName, filteredData, &b)
+		con.CreateTablePostgres(tableName, columns, &b)
 
 	case "sqlserver":
-		con.UpsertSQLServer(tableName, filteredData, &b)
+		con.CreateTableSQLServer(tableName, columns, &b)
 	}
 
-	//l.Printf("%v\n\n", b.String())
-	_, err := con.DB.DB().Exec(b.String())
+	//l(0, "%v\n\n", b.String())
+	_, err := con.DB.Exec(b.String())
+	if err != nil {
+		l(4, "%v\n", b.String())
+		l(4, "%v \n", err.Error())
+	}
 	return err
 }
 
-func (con *DBConnection) AddColumns(tableName string, newColumns map[string]string) {
-
-	var b bytes.Buffer
-
-	switch con.DBType {
-
-	case "mysql":
-		con.AddColumnsMySQL(tableName, newColumns, &b)
-
-	case "postgres":
-		con.AddColumnsPostgres(tableName, newColumns, &b)
-
-	case "sqlserver":
-		con.AddColumnsSQLServer(tableName, newColumns, &b)
-	}
-
-	//l.Printf("%v\n\n", b.String())
-	_, err := con.DB.DB().Exec(b.String())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ALTER TABLE ERROR: %v | %v\n", tableName, err.Error())
-		//panic(err.Error())
-	}
-}
-
 func (con *DBConnection) toDBString(value interface{}) string {
+
+	var result string
 
 	switch value.(type) {
 
@@ -277,18 +440,20 @@ func (con *DBConnection) toDBString(value interface{}) string {
 		}
 
 	case []interface{}:
-		jsonString, err := json.Marshal(value)
+		jsonBytes, err := json.Marshal(value)
 		if err != nil {
 			panic(err)
 		}
-		return "'" + string(jsonString) + "'"
+
+		result = string(jsonBytes)
 
 	case map[string]interface{}:
-		jsonString, err := json.Marshal(value)
+		jsonBytes, err := json.Marshal(value)
 		if err != nil {
 			panic(err)
 		}
-		return "'" + string(jsonString) + "'"
+
+		result = string(jsonBytes)
 
 	case int:
 		return strconv.Itoa(value.(int))
@@ -297,13 +462,14 @@ func (con *DBConnection) toDBString(value interface{}) string {
 		return strconv.FormatBool(value.(bool))
 
 	case string:
-		return "'" + value.(string) + "'"
+		result = value.(string)
 
 	default:
 		panic("unsupported type " + reflect.TypeOf(value).String())
 	}
 
-	return ""
+	// Escape special characters
+	return "'" + strings.Replace(result, "'", "''", -1) + "'"
 }
 
 func (con *DBConnection) toDBType(gotype string) string {
@@ -316,7 +482,26 @@ func (con *DBConnection) toDBType(gotype string) string {
 	return dbType
 }
 
-func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
+func (con *DBConnection) updateColumns(tableName string, columns []map[string]string) {
+
+	// ggf. Tabelle aktualisieren
+	var newColumns = make(map[string]string)
+	var existingColumns = con.getTableColumns(tableName)
+	for _, col := range columns {
+		for cName, cType := range col {
+			if existingColumns[cName] == "" {
+				newColumns[cName] = cType
+			}
+		}
+	}
+
+	// Datenbankschema aktualisieren
+	if len(newColumns) > 0 {
+		con.addTableColumns(tableName, newColumns)
+	}
+}
+
+func (con *DBConnection) getTableColumns(tableName string) map[string]string {
 
 	// TODO: Datenbank selektieren
 
@@ -336,9 +521,11 @@ func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
 		stmt = "SELECT column_name FROM information_schema.columns WHERE table_name = '" + tableName + "';"
 	}
 
-	rows, err := con.DB.Raw(stmt).Rows()
+	rows, err := con.DB.Query(stmt)
 	if err != nil {
-		panic(err)
+		l(4, "%v\n", stmt)
+		l(4, "%v \n", err.Error())
+		os.Exit(1)
 	}
 
 	defer rows.Close()
@@ -351,4 +538,28 @@ func (con *DBConnection) GetTableColumns(tableName string) map[string]string {
 	}
 
 	return columns
+}
+
+func (con *DBConnection) addTableColumns(tableName string, newColumns map[string]string) {
+
+	var b bytes.Buffer
+
+	switch con.DBType {
+
+	case "mysql":
+		con.AddColumnsMySQL(tableName, newColumns, &b)
+
+	case "postgres":
+		con.AddColumnsPostgres(tableName, newColumns, &b)
+
+	case "sqlserver":
+		con.AddColumnsSQLServer(tableName, newColumns, &b)
+	}
+
+	//l(0, "%v\n\n", b.String())
+	_, err := con.DB.Exec(b.String())
+	if err != nil {
+		l(4, "%v\n", b.String())
+		l(4, "%v \n", err.Error())
+	}
 }

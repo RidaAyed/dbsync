@@ -6,6 +6,28 @@ import (
 	"strings"
 )
 
+func (con *DBConnection) CreateTableSQLServer(tableName string, columns []map[string]string, b *bytes.Buffer) {
+
+	var cols []string
+	for i := 0; i < len(columns); i++ {
+		for cName, cType := range columns[i] {
+			var def = "[" + cName + "] " + con.toDBType(cType)
+			if cName == "$id" {
+				def += " NOT NULL PRIMARY KEY "
+			}
+			cols = append(cols, def)
+		}
+	}
+
+	b.WriteString("IF NOT EXISTS (SELECT [name] FROM SYS.TABLES WHERE [name] = ")
+	b.WriteString("'" + tableName + "'")
+	b.WriteString(")")
+	b.WriteString(" CREATE TABLE ")
+	b.WriteString(tableName)
+	b.WriteString("(" + strings.Join(cols, ",") + ")")
+	b.WriteString(";")
+}
+
 func (con *DBConnection) AddColumnsSQLServer(tableName string, columns map[string]string, b *bytes.Buffer) {
 
 	b.WriteString("ALTER TABLE ")
