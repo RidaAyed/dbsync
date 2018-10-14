@@ -29,11 +29,23 @@ const FETCH_SIZE_CONTACTS = 30 // Number of contacts to fetch in one step
 const MAX_DB_CONNECTIONS = 64
 
 const (
-	//baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
-	//tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
+	tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
 
-	baseURL               = "https://api.dialfire.com"
-	tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	//baseURL               = "https://api.dialfire.com"
+	//tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+)
+
+/******************************************
+* RUNTIME VARS
+*******************************************/
+var (
+	db            *database.DBConnection
+	config        *AppConfig
+	campaignID    string
+	campaignToken string
+	mode          string
+	cntWorker     int
 )
 
 /******************************************
@@ -44,104 +56,64 @@ var (
 	errorLog *log.Logger
 )
 
-func l(level int, msg string, args ...interface{}) {
+func createLog(filePath string) (*log.Logger, error) {
 
-	switch level {
-	case 4:
-		errorLog.Printf(msg, args...)
-	default:
-		debugLog.Printf(msg, args...)
-	}
-}
-
-func getLogDir() string {
-
-	var path = getConfigDir() + "logs/"
-
-	if _, err := os.Stat(path); err != nil {
-
-		if os.IsNotExist(err) {
-
-			err = os.MkdirAll(path, 0755)
-			if err != nil {
-				l(4, "Error creating directory: '%v': %v\n", path, err)
-				os.Exit(1)
-			}
-		} else {
-			l(4, "Error creating directory: '%v': %v\n", path, err)
-			os.Exit(1)
-		}
+	var dirPath = filePath[:strings.LastIndex(filePath, "/")]
+	if err := createDirectory(dirPath); err != nil {
+		return nil, err
 	}
 
-	return path
-}
+	logFile, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
 
-/******************************************
-* RUNTIME VARS
-*******************************************/
-var (
-	//db            *database.DBConnection
-	config        Config
-	campaignID    string
-	campaignToken string
-	mode          string
-	cntWorker     int
-)
+	var logger = log.New(logFile, "[DEBUG]", log.Ldate|log.Ltime|log.Lshortfile)
+	return logger, nil
+}
 
 /******************************************
 * CONFIGURATION
 *******************************************/
 
-type Config struct {
+type AppConfig struct {
+	Path      string `json:"-"`
 	Timestamp string `json:"timestamp"`
 }
 
-func getConfigDir() string {
+func loadConfig(filePath string) (*AppConfig, error) {
 
-	var path = os.Getenv("HOME") + "/.dbsync/"
-
-	if _, err := os.Stat(path); err != nil {
-
-		if os.IsNotExist(err) {
-
-			err = os.MkdirAll(path, 0755)
-			if err != nil {
-				l(4, "Error creating directory: '%v': %v\n", path, err)
-				os.Exit(1)
-			}
-		} else {
-			l(4, "Error creating directory: '%v': %v\n", path, err)
-			os.Exit(1)
-		}
+	var dirPath = filePath[:strings.LastIndex(filePath, "/")]
+	if err := createDirectory(dirPath); err != nil {
+		return nil, err
 	}
 
-	return path
-}
-
-func loadConfig() {
-
-	configFile, err := ioutil.ReadFile(getConfigDir() + campaignID + ".json")
+	var config AppConfig
+	configFile, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		config = Config{
+		config = AppConfig{
 			Timestamp: time.Now().UTC().Format(time.RFC3339)[:19], // default: current UTC time in format "2006-01-02T15:04:05"
 		}
-		l(0, "Configuration file %v.json not found! (create new)", getConfigDir()+campaignID)
+		debugLog.Printf("Configuration file %v not found!", filePath)
 	}
 
 	json.Unmarshal(configFile, &config)
+	config.Path = filePath
 
+	return &config, nil
 }
 
-func saveConfig() {
+func (c *AppConfig) save() {
 
-	var path = getConfigDir()
-
-	jsonData, err := json.Marshal(config)
+	jsonData, err := json.Marshal(c)
 	if err != nil {
-		l(4, "%v\n", err.Error())
+		errorLog.Printf("%v\n", err.Error())
 	}
 
-	ioutil.WriteFile(path+campaignID+".json", jsonData, 0644)
+	debugLog.Printf("Save config to " + c.Path)
+	//debugLog.Printf("%v", *c)
+
+	ioutil.WriteFile(c.Path, jsonData, 0644)
 }
 
 /*******************************************
@@ -150,9 +122,12 @@ func saveConfig() {
 func teardown() {
 
 	// Close database connection
+	if db != nil {
+		db.DB.Close()
+	}
 
-	// Write configuration
-	saveConfig()
+	// Save configuration
+	config.save()
 }
 
 /*******************************************
@@ -225,16 +200,6 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 	mode = *execMode
 	url := *URL
 
-	// Create logger
-	//logFile, err := os.OpenFile(getLogDir()+campaignID+"_"+mode+"_"+time.Now().Format("20060102150405")+".log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	logFile, err := os.OpenFile(getLogDir()+campaignID+"_"+mode+".log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
-	}
-	debugLog = log.New(logFile, "", log.Ldate|log.Ltime|log.Lshortfile)
-	errorLog = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
-
 	// Setup parameters
 	if len(*tPrefix) > 0 {
 		eventOptions["tasks"] = *tPrefix
@@ -251,8 +216,26 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 		}
 	}
 
+	// Create logger
+	var err error
+	//debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
+	debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + ".log")
+	if err != nil {
+		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
+		if err != nil {
+			panic(err)
+		}
+	}
+	errorLog = log.New(os.Stdout, "[ERROR]", log.Ldate|log.Ltime|log.Lshortfile)
+
 	// Load config
-	loadConfig()
+	config, err = loadConfig("/var/opt/dbsync/" + campaignID + ".json")
+	if err != nil {
+		config, err = loadConfig(os.Getenv("HOME") + "/.dbsync/" + campaignID + ".json")
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	// Set start date from config file (iff not explicitly defined)
 	var startDate string
@@ -284,7 +267,7 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 			}
 		}
 		if !dbValid {
-			l(4, "Invalid database driver '%v'", dbms)
+			errorLog.Printf("Invalid database driver '%v'", dbms)
 			os.Exit(1)
 		}
 
@@ -299,51 +282,54 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 		}
 
 		// Datenbankverbindung öffnent
-		dbCon, err := database.Open(dbms, url, l)
+		db, err = database.Open(dbms, url, debugLog, errorLog)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 
 		// Schema aktualisieren
-		prepareDatabase(dbCon)
+		prepareDatabase()
 
 		switch mode {
 
 		case "db_init":
-			modeDatabaseInit(dbCon)
+			modeDatabaseInit()
 
 		case "db_update":
 
 			if *dateStart == "" {
 				startDate = time.Now().UTC().Add(-168 * time.Hour).Format("2006-01-02") // default: -1 week, iff no start date was passed as command line argument
 			}
-			modeDatabaseUpdate(dbCon, startDate)
+			modeDatabaseUpdate(startDate)
 
 		case "db_sync":
-			modeDatabaseSync(dbCon, startDate)
+			modeDatabaseSync(startDate)
 		}
 
 	}
 }
 
-func prepareDatabase(con *database.DBConnection) {
+func prepareDatabase() {
 
 	// Kampagne laden
 	data, err := getCampaign()
 	if err != nil {
-		l(4, "%v\n", err.Error())
+		errorLog.Printf("%v\n", err.Error())
 		os.Exit(1)
 	}
 
 	var campaign database.Campaign
 	if err = json.Unmarshal(data, &campaign); err != nil {
-		l(4, "%v\n", err.Error())
+		errorLog.Printf("%v\n", err.Error())
 		os.Exit(1)
 	}
 
 	// Schema für Kontakttabelle erzeugen und ggf. DB Tabelle aktualisieren
-	con.UpdateTables(campaign)
+	if err = db.UpdateTables(campaign); err != nil {
+		errorLog.Printf("%v\n", err.Error())
+		os.Exit(1)
+	}
 }
 
 /*******************************************
@@ -351,7 +337,7 @@ func prepareDatabase(con *database.DBConnection) {
 ********************************************/
 func modeWebhook(url string, startDate string) {
 
-	l(0, "Mode: Webhook")
+	debugLog.Printf("Mode: Webhook")
 
 	var wg1, wg2, wg3, wg4 sync.WaitGroup
 
@@ -380,7 +366,7 @@ func modeWebhook(url string, startDate string) {
 
 func webhookSender(n int, url string, wg *sync.WaitGroup) {
 
-	//l(0, "Start webhook sender %v", n)
+	//debugLog.Printf("Start webhook sender %v", n)
 
 	defer wg.Done()
 
@@ -391,7 +377,7 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 			break
 		}
 
-		l(0, "Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
+		debugLog.Printf("Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
 
 		// Kontakt
 		var contact = taPointer.Contact
@@ -410,9 +396,9 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 			var transactions = entry["transactions"].([]interface{})
 			var transaction = transactions[taIdx]
 
-			//l(0, "tlIdx %v", tlIdx)
-			//l(0, "taIdx %v", taIdx)
-			//l(0, "TA %v", transaction)
+			//debugLog.Printf("tlIdx %v", tlIdx)
+			//debugLog.Printf("taIdx %v", taIdx)
+			//debugLog.Printf("TA %v", transaction)
 
 			var data = map[string]interface{}{
 				`contact`:     contact,
@@ -420,11 +406,11 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 				`state`:       state,
 			}
 
-			l(0, "Send transaction contact: %v | pointer: %v", taPointer.ContactID, p)
+			debugLog.Printf("Send transaction contact: %v | pointer: %v", taPointer.ContactID, p)
 
 			payload, err := json.Marshal(data)
 			if err != nil {
-				l(4, "%v\n", err.Error())
+				errorLog.Printf("%v\n", err.Error())
 				continue
 			}
 
@@ -441,12 +427,12 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 				// Save start date if transaction was sent successfully
 				config.Timestamp = transaction.(map[string]interface{})["fired"].(string)
 			} else {
-				l(4, "%v\n", err.Error())
+				errorLog.Printf("%v\n", err.Error())
 			}
 		}
 	}
 
-	//l(0, "Stop webhook sender %v", n)
+	//debugLog.Printf("Stop webhook sender %v", n)
 }
 
 func callWebservice(url string, data []byte) error {
@@ -469,7 +455,7 @@ func callWebservice(url string, data []byte) error {
 			return err
 		}
 
-		l(0, "[POST] %v | attempt: %v | status: %v", url, i+1, resp.Status)
+		debugLog.Printf("[POST] %v | attempt: %v | status: %v", url, i+1, resp.Status)
 
 		timeout := time.Second * time.Duration(math.Pow(2, float64(i)))
 		time.Sleep(timeout)
@@ -484,9 +470,9 @@ func callWebservice(url string, data []byte) error {
 * MODE: DATABASE INITIALIZE
 ********************************************/
 
-func modeDatabaseInit(db *database.DBConnection) {
+func modeDatabaseInit() {
 
-	l(0, "Mode: Database Initialize")
+	debugLog.Printf("Mode: Database Initialize")
 
 	var wg1, wg2, wg3, wg4 sync.WaitGroup
 
@@ -503,26 +489,26 @@ func modeDatabaseInit(db *database.DBConnection) {
 
 	wg4.Add(MAX_DB_CONNECTIONS)
 	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
-		go databaseUpdater(i, db, &wg4)
+		go databaseUpdater(i, &wg4)
 	}
 
 	go statisticAggregator()
 
 	// 1. Wait until all contact ids have been listed
 	wg1.Wait()
-	l(0, "Contact listing DONE")
+	debugLog.Printf("Contact listing DONE")
 	close(chanContactFetcher)
 
 	wg2.Wait()
-	l(0, "Contact fetch DONE")
+	debugLog.Printf("Contact fetch DONE")
 	close(chanDataSplitter)
 
 	wg3.Wait()
-	l(0, "Data split DONE")
+	debugLog.Printf("Data split DONE")
 	close(chanDatabaseUpdater)
 
 	wg4.Wait()
-	l(0, "Database update DONE")
+	debugLog.Printf("Database update DONE")
 	close(chanStatistics)
 	<-chanDone // Wait until statistics have been logged
 
@@ -534,9 +520,9 @@ func modeDatabaseInit(db *database.DBConnection) {
 * MODE: DATABASE UPDATE
 ********************************************/
 
-func modeDatabaseUpdate(db *database.DBConnection, startDate string) {
+func modeDatabaseUpdate(startDate string) {
 
-	l(0, "Mode: Database Update starting at "+startDate)
+	debugLog.Printf("Mode: Database Update starting at " + startDate)
 
 	var wg1, wg2, wg3, wg4, wg5 sync.WaitGroup
 
@@ -556,30 +542,30 @@ func modeDatabaseUpdate(db *database.DBConnection, startDate string) {
 
 	wg5.Add(MAX_DB_CONNECTIONS)
 	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
-		go databaseUpdater(i, db, &wg5)
+		go databaseUpdater(i, &wg5)
 	}
 
 	go statisticAggregator()
 
 	// 1. Wait until time range has been past
 	wg1.Wait()
-	//l(0, "Iterate time range DONE")
+	//debugLog.Printf("Iterate time range DONE")
 	close(chanEventFetcher)
 
 	wg2.Wait()
-	l(0, "Event fetch DONE")
+	debugLog.Printf("Event fetch DONE")
 	close(chanContactFetcher)
 
 	wg3.Wait()
-	l(0, "Contact fetch DONE")
+	debugLog.Printf("Contact fetch DONE")
 	close(chanDataSplitter)
 
 	wg4.Wait()
-	l(0, "Data split DONE")
+	debugLog.Printf("Data split DONE")
 	close(chanDatabaseUpdater)
 
 	wg5.Wait()
-	l(0, "Database update DONE")
+	debugLog.Printf("Database update DONE")
 	close(chanStatistics)
 	<-chanDone // Wait until statistics have been logged
 
@@ -591,9 +577,9 @@ func modeDatabaseUpdate(db *database.DBConnection, startDate string) {
 * MODE: DATABASE SYNCHRONIZATION
 ********************************************/
 
-func modeDatabaseSync(db *database.DBConnection, startDate string) {
+func modeDatabaseSync(startDate string) {
 
-	l(0, "Mode: Database Synchronize")
+	debugLog.Printf("Mode: Database Synchronize")
 
 	var wg1, wg2, wg3, wg4 sync.WaitGroup
 
@@ -616,7 +602,7 @@ func modeDatabaseSync(db *database.DBConnection, startDate string) {
 
 	wg4.Add(MAX_DB_CONNECTIONS)
 	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
-		go databaseUpdater(i, db, &wg4)
+		go databaseUpdater(i, &wg4)
 	}
 
 	ticker()
@@ -632,8 +618,8 @@ func getCampaign() ([]byte, error) {
 
 	url := baseURL + "/api/campaigns/" + campaignID
 
-	//l(0, "Load contacts: %v\n", contactIDs)
-	//l(0, "Data: %v\n", contactIDs)
+	//debugLog.Printf("Load contacts: %v\n", contactIDs)
+	//debugLog.Printf("Data: %v\n", contactIDs)
 
 	var err error
 	var req *http.Request
@@ -646,13 +632,13 @@ func getCampaign() ([]byte, error) {
 	for i := 0; i < 10; i++ {
 
 		if resp, err = http.DefaultClient.Do(req); err == nil && resp.StatusCode == 200 {
-			//l(0, "GET contacts: %v - Status: 200", url)
+			//debugLog.Printf("GET contacts: %v - Status: 200", url)
 			break
 		}
 
-		l(0, "GET campaign: %v - Status %v", url, resp.Status)
+		debugLog.Printf("GET campaign: %v - Status %v", url, resp.Status)
 
-		//l(0, "get contacts response %v", resp.Status)
+		//debugLog.Printf("get contacts response %v", resp.Status)
 
 		if err != nil {
 			return nil, err
@@ -681,7 +667,7 @@ func listContacts(cursor string) ([]byte, error) {
 
 	url := baseURL + "/data/campaigns/" + campaignID + "/contacts/?_type_=f&_limit_=" + strconv.Itoa(FETCH_SIZE_CONTACTS) + "&_name___GT=" + cursor
 
-	l(0, "List Contacts: %v\n", url)
+	//debugLog.Printf("List Contacts: %v\n", url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -723,8 +709,8 @@ func getContacts(contactIDs []string) ([]byte, error) {
 
 	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/flat_view"
 
-	//l(0, "Load contacts: %v\n", contactIDs)
-	//l(0, "Data: %v\n", contactIDs)
+	//debugLog.Printf("Load contacts: %v\n", contactIDs)
+	//debugLog.Printf("Data: %v\n", contactIDs)
 
 	data, err := json.Marshal(contactIDs)
 	if err != nil {
@@ -741,13 +727,13 @@ func getContacts(contactIDs []string) ([]byte, error) {
 	for i := 0; i < 10; i++ {
 
 		if resp, err = http.DefaultClient.Do(req); err == nil && resp.StatusCode == 200 {
-			//l(0, "GET contacts: %v - Status: 200", url)
+			//debugLog.Printf("GET contacts: %v - Status: 200", url)
 			break
 		}
 
-		l(0, "GET contacts: %v - Status %v", url, resp.Status)
+		debugLog.Printf("GET contacts: %v - Status %v", url, resp.Status)
 
-		//l(0, "get contacts response %v", resp.Status)
+		//debugLog.Printf("get contacts response %v", resp.Status)
 
 		if err != nil {
 			return nil, err
@@ -783,7 +769,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 
 	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/transactions/?"
 
-	//l(0, "Params %v", params)
+	//debugLog.Printf("Params %v", params)
 
 	// CLI Options
 	for k, v := range eventOptions {
@@ -800,7 +786,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 	// Limit
 	url += "limit=" + strconv.Itoa(FETCH_SIZE_EVENTS)
 
-	//l(0, "[GET] %v", url)
+	//debugLog.Printf("[GET] %v", url)
 
 	var req *http.Request
 	var err error
@@ -813,11 +799,11 @@ func getTransactions(params map[string]string) ([]byte, error) {
 	for i := 0; i < 10; i++ {
 
 		if resp, err = http.DefaultClient.Do(req); err == nil && resp.StatusCode == 200 {
-			//l(0, "GET transactions: %v - Status: 200", url)
+			//debugLog.Printf("GET transactions: %v - Status: 200", url)
 			break
 		}
 
-		l(0, "GET transactions: %v - Status %v", url, resp.Status)
+		debugLog.Printf("GET transactions: %v - Status %v", url, resp.Status)
 
 		if err != nil {
 			return nil, err
@@ -886,7 +872,7 @@ var eventCache = ttlcache.NewCache(time.Minute)           // Autoextend bei GET
 
 func eventFetcher(n int, wg *sync.WaitGroup) {
 
-	//l(0, "Start event fechter %v", n)
+	//debugLog.Printf("Start event fechter %v", n)
 
 	defer wg.Done()
 
@@ -917,14 +903,14 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 			// Transaktionen laden
 			data, err := getTransactions(params)
 			if err != nil {
-				l(4, "%v\n", err.Error())
+				errorLog.Printf("%v\n", err.Error())
 				break
 			}
 
 			// Result
 			var resp FetchResult
 			if err = json.Unmarshal(data, &resp); err != nil {
-				l(4, "%v\n", err.Error())
+				errorLog.Printf("%v\n", err.Error())
 				break
 			}
 
@@ -963,10 +949,10 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 
 			// Batch in 1000er Schritten
 			if len(eventsByContactID) >= FETCH_SIZE_CONTACTS || resp.Cursor == "" {
-				//l(0, "Eventlist %v", eventsByContactID)
+				//debugLog.Printf("Eventlist %v", eventsByContactID)
 
 				if len(eventsByContactID) > 0 {
-					//l(0, "Event fetcher %v: %v transactions | % contacts", n, eventCount, len(eventsByContactID))
+					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
 					chanContactFetcher <- eventsByContactID
 					eventsByContactID = make(map[string]TAPointerList)
 					eventCount = 0
@@ -974,10 +960,13 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 			}
 
 			if resp.Cursor == "" {
-				var duration = timeRange.To.Sub(timeRange.From)
-				l(0, "Event fetcher %v: %v transactions | from: %v | to: %v (%v)", n, eventCountTotal, from, to, duration)
+				debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v", n, eventCountTotal, params["from"], params["to"])
 				// Acknoledge fetch DONE
 				if timeRange.Ack {
+					var duration = time.Duration(0)
+					if !timeRange.To.IsZero() {
+						duration = timeRange.To.Sub(timeRange.From)
+					}
 					chanEventFetchDone <- EventFetchResult{
 						Duration: duration,
 						Count:    eventCountTotal,
@@ -990,7 +979,7 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 		}
 	}
 
-	//l(0, "Stop event fechter %v", n)
+	//debugLog.Printf("Stop event fechter %v", n)
 }
 
 type Statistic struct {
@@ -1016,10 +1005,10 @@ func statisticAggregator() {
 	}
 
 	// Print statistics
-	l(0, "------------------------------------------------------------------------------------------")
-	l(0, "Protocol:")
+	debugLog.Printf("------------------------------------------------------------------------------------------")
+	debugLog.Printf("Protocol:")
 	for sType, sCount := range statistics {
-		l(0, "%v: %v", sType, sCount)
+		debugLog.Printf("%v: %v", sType, sCount)
 	}
 	chanDone <- true
 }
@@ -1031,7 +1020,7 @@ type ListingResponse struct {
 
 func contactLister(wg *sync.WaitGroup) {
 
-	//l(0, "Start contact lister")
+	//debugLog.Printf("Start contact lister")
 
 	defer wg.Done()
 
@@ -1040,13 +1029,13 @@ func contactLister(wg *sync.WaitGroup) {
 
 		data, err := listContacts(cursor)
 		if err != nil {
-			l(4, "%v\n", err.Error())
+			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
 		var resp ListingResponse
 		if err = json.Unmarshal(data, &resp); err != nil {
-			l(4, "%v\n", err.Error())
+			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
@@ -1064,7 +1053,7 @@ func contactLister(wg *sync.WaitGroup) {
 		}
 	}
 
-	//l(0, "Stop contact lister")
+	//debugLog.Printf("Stop contact lister")
 }
 
 // TODO: Caching von Kontakten (MD5 und Viewabfrage???)
@@ -1074,7 +1063,7 @@ var chanContactFetcher = make(chan map[string]TAPointerList)
 
 func contactFetcher(n int, wg *sync.WaitGroup) {
 
-	//l(0, "Start contact fechter %v", n)
+	//debugLog.Printf("Start contact fechter %v", n)
 
 	defer wg.Done()
 
@@ -1085,8 +1074,8 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		//l(0, "Fetch contacts %v\n", eventsByContactID)
-		//l(0, "Contact fetcher %v: Load %v contacts", n, len(eventsByContactID))
+		//debugLog.Printf("Fetch contacts %v\n", eventsByContactID)
+		debugLog.Printf("Contact fetcher %v: Load %v contacts", n, len(eventsByContactID))
 
 		var contactIDs = make([]string, 0, len(eventsByContactID))
 		for id := range eventsByContactID {
@@ -1095,7 +1084,7 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 
 		data, err := getContacts(contactIDs)
 		if err != nil {
-			l(4, "%v\n", err.Error())
+			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
@@ -1103,7 +1092,7 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 		d := json.NewDecoder(bytes.NewReader(data))
 		d.UseNumber()
 		if d.Decode(&results); err != nil {
-			l(4, "%v\n", err.Error())
+			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
@@ -1117,14 +1106,14 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 		}
 	}
 
-	//l(0, "Stop contact fechter %v", n)
+	//debugLog.Printf("Stop contact fechter %v", n)
 }
 
 var chanDataSplitter = make(chan TAPointerList)
 
 func dataSplitter(n int, wg *sync.WaitGroup) {
 
-	//l(0, "Start database updater %v", n)
+	//debugLog.Printf("Start database updater %v", n)
 
 	defer wg.Done()
 
@@ -1135,7 +1124,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		//l(0, "Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
+		//debugLog.Printf("Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
 
 		// Kontakt
 		var contact = pointerList.Contact
@@ -1195,7 +1184,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 	}
 
-	//l(0, "Stop database updater %v", n)
+	//debugLog.Printf("Stop database updater %v", n)
 }
 
 func insertTransaction(transaction map[string]interface{}) {
@@ -1246,9 +1235,9 @@ func insertTransaction(transaction map[string]interface{}) {
 
 var chanDatabaseUpdater = make(chan database.Entity)
 
-func databaseUpdater(n int, db *database.DBConnection, wg *sync.WaitGroup) {
+func databaseUpdater(n int, wg *sync.WaitGroup) {
 
-	//l(0, "Start database inserter")
+	//debugLog.Printf("Start database inserter")
 
 	defer wg.Done()
 
@@ -1261,16 +1250,19 @@ func databaseUpdater(n int, db *database.DBConnection, wg *sync.WaitGroup) {
 			break
 		}
 
-		//l(0, "DB Updater: Insert %v %v", entity.Type, entity.Data["$id"].(string))
+		//debugLog.Printf("DB Updater: Upsert %v", entity.Data)
 		err := db.Upsert(entity)
 		if err == nil {
 			// Save start date if transaction was stored successfully
 			if entity.Type == "transaction" {
+				debugLog.Printf("Update ts: %v", entity.Data["fired"].(string))
 				config.Timestamp = entity.Data["fired"].(string)
 			}
 			counter[entity.Type+" success"]++
 		} else {
 			upsertError(entity, err)
+			//debugLog.Printf("%v", entity.Data)
+			panic("a")
 			counter[entity.Type+" failed"]++
 		}
 	}
@@ -1282,20 +1274,20 @@ func databaseUpdater(n int, db *database.DBConnection, wg *sync.WaitGroup) {
 		}
 	}
 
-	//l(0, "Stop database inserter")
+	//debugLog.Printf("Stop database inserter")
 }
 
 func upsertError(entity database.Entity, err error) {
 
 	switch entity.Type {
 	case "contact":
-		l(4, "UPSERT ERROR: Contact | CONTACT ID: %v | %v\n", entity.Data["$id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", entity.Data["$id"], err.Error())
 	case "transaction":
-		l(4, "UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n", entity.Data["$contact_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", entity.Data["$contact_id"], err.Error())
 	case "connection":
-		l(4, "UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n", entity.Data["$transaction_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", entity.Data["$transaction_id"], err.Error())
 	case "recordings":
-		l(4, "UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n", entity.Data["$connection_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", entity.Data["$connection_id"], err.Error())
 	}
 }
 
@@ -1304,7 +1296,7 @@ func upsertError(entity database.Entity, err error) {
 *******************************************/
 func ticker() {
 
-	//l(0, "Start ticker")
+	//debugLog.Printf("Start ticker")
 
 	//tMin := time.NewTicker(time.Second) // Testing
 	tMin := time.NewTicker(time.Second * 20)
@@ -1337,14 +1329,14 @@ func ticker() {
 /** läuft zurück bis zum angegebenen Startdatum zurück und beendet sich anschließend**/
 func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
-	//l(0, "Start reverse ticker")
-	l(0, "Load all transactions after %v", startDate)
+	//debugLog.Printf("Start reverse ticker")
+	debugLog.Printf("Load all transactions after %v", startDate)
 
 	// Parse start date
 	var layout = "2006-01-02T15:04:05.999Z"[0:len(startDate)]
 	timeStart, err := time.Parse(layout, startDate)
 	if err != nil {
-		l(4, err.Error())
+		errorLog.Printf(err.Error())
 		os.Exit(1)
 	}
 
@@ -1354,8 +1346,8 @@ func reverseTicker(startDate string, wg *sync.WaitGroup) {
 	var nextTo = time.Now().UTC()
 	var nextFrom = nextTo.Add(-1 * decrement)
 
-	//l(0, "FROM: %v", nextFrom)
-	//l(0, "TO: %v", nextTo)
+	//debugLog.Printf("FROM: %v", nextFrom)
+	//debugLog.Printf("TO: %v", nextTo)
 
 loop:
 	for {
@@ -1364,13 +1356,13 @@ loop:
 
 		// TODO: Dynamische Timeframeanpassung überarbeiten / limitieren (ACK auf 'true')
 		case fetchResult := <-chanEventFetchDone: // Flusskontrolle
-			if fetchResult.Count > 0 {
+			if fetchResult.Duration > 0 && fetchResult.Count > 0 {
 				decrement = time.Duration((fetchResult.Duration.Seconds() / float64(fetchResult.Count)) * FETCH_SIZE_EVENTS * 1000000000) // Umrechnung in Nanosekunden
-				l(0, "Decresase timeframe interval to %v", decrement)
+				debugLog.Printf("Decresase timeframe interval to %v", decrement)
 			} else {
 				// exp backoff
 				decrement *= 2
-				l(0, "Increase timeframe interval to %v", decrement)
+				debugLog.Printf("Increase timeframe interval to %v", decrement)
 			}
 
 		default: // Nächster Zeitintervall
@@ -1394,7 +1386,7 @@ loop:
 		}
 	}
 
-	//l(0, "Stop reverse ticker")
+	//debugLog.Printf("Stop reverse ticker")
 }
 
 /******************************************
@@ -1405,4 +1397,21 @@ func hash(text string) string {
 	h := md5.New()
 	io.WriteString(h, text)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func createDirectory(path string) error {
+
+	if _, err := os.Stat(path); err != nil {
+
+		if os.IsNotExist(err) {
+
+			err = os.MkdirAll(path, 0755)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
 }

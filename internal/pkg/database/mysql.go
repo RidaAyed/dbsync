@@ -44,29 +44,34 @@ func (con *DBConnection) AddColumnsMySQL(tableName string, columns map[string]st
 	b.WriteString(";")
 }
 
-func (con *DBConnection) InsertMySQL(tableName string, values map[string]interface{}, b *bytes.Buffer) {
+func (con *DBConnection) PrepareUpsertMySQL(tableName string, columns []string, b *bytes.Buffer) {
 
 	// Convert keys and values to string array
 	var cols []string
-	var colData []string
-	for col := range values {
+	var insertData []string
+	var updateData []string
+	for _, col := range columns {
 		cols = append(cols, "`"+col+"`")
-		colData = append(colData, con.toDBString(values[col]))
+		insertData = append(insertData, "?")
+		updateData = append(updateData, "`"+col+"`=?")
 	}
 
 	// Insert data
-	b.WriteString("INSERT IGNORE INTO ")
+	b.WriteString("INSERT INTO ")
 	b.WriteString(tableName)
 	b.WriteString(" (")
 	b.WriteString(strings.Join(cols, ","))
 	b.WriteString(") ")
 	b.WriteString("VALUES")
 	b.WriteString(" (")
-	b.WriteString(strings.Join(colData, ","))
+	b.WriteString(strings.Join(insertData, ","))
 	b.WriteString(")")
+	b.WriteString(" ON DUPLICATE KEY UPDATE ")
+	b.WriteString(strings.Join(updateData, ","))
 	b.WriteString(";")
 }
 
+/*
 func (con *DBConnection) UpsertMySQL(tableName string, values map[string]interface{}, b *bytes.Buffer) {
 
 	// Convert keys and values to string array
@@ -93,3 +98,27 @@ func (con *DBConnection) UpsertMySQL(tableName string, values map[string]interfa
 	b.WriteString(strings.Join(updateData, ","))
 	b.WriteString(";")
 }
+
+func (con *DBConnection) InsertMySQL(tableName string, values map[string]interface{}, b *bytes.Buffer) {
+
+	// Convert keys and values to string array
+	var cols []string
+	var colData []string
+	for col := range values {
+		cols = append(cols, "`"+col+"`")
+		colData = append(colData, con.toDBString(values[col]))
+	}
+
+	// Insert data
+	b.WriteString("INSERT IGNORE INTO ")
+	b.WriteString(tableName)
+	b.WriteString(" (")
+	b.WriteString(strings.Join(cols, ","))
+	b.WriteString(") ")
+	b.WriteString("VALUES")
+	b.WriteString(" (")
+	b.WriteString(strings.Join(colData, ","))
+	b.WriteString(")")
+	b.WriteString(";")
+}
+*/
