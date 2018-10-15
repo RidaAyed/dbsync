@@ -191,7 +191,7 @@ func Open(dbType string, uri string, dl *log.Logger, el *log.Logger) (*DBConnect
 
 type Entity struct {
 	Type string
-	Data map[string]interface{}
+	Data *map[string]interface{}
 }
 
 func (con *DBConnection) CreateTable(tableName string, columns []map[string]string) error {
@@ -237,15 +237,15 @@ func (con *DBConnection) Upsert(entity Entity) error {
 	// Prepare statement
 	stmt, err := con.PrepareUpsertStatement(tableName, fieldNames)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	// Daten duplizieren (1. Insert / 2. Update)
 	values = append(values, values...)
 
-	// SQLServer benötigt zusätzliches $id Feld
+	// SQLServer benötigt zusätzliches $id Feld für Query
 	if con.DBType == "sqlserver" {
-		values = append([]interface{}{entity.Data["$id"]}, values...)
+		values = append([]interface{}{(*entity.Data)["$id"]}, values...)
 	}
 
 	//debugLog.Printf("%v", values)
@@ -290,8 +290,8 @@ func filter(entity Entity) map[string]interface{} {
 			//var cName = strings.ToLower(cName)            // most DMBS are case insensitive
 			//cName = strings.Replace(cName, "ß", "ss", -1) // SQLSERVER has problems with 'ß'
 
-			if entity.Data[cName] != nil {
-				filteredData[cName] = entity.Data[cName]
+			if (*entity.Data)[cName] != nil {
+				filteredData[cName] = (*entity.Data)[cName]
 			}
 		}
 	}
@@ -419,8 +419,11 @@ func (con *DBConnection) toDBString(value interface{}) string {
 		}
 
 	case string:
-		//result = "'" + value.(string) + "'"
 		result = value.(string)
+		// Auf 255 Zeichen beschränken
+		if len(result) > 255 {
+			result = result[:255]
+		}
 
 	default:
 		panic("unsupported type " + reflect.TypeOf(value).String())
@@ -430,7 +433,7 @@ func (con *DBConnection) toDBString(value interface{}) string {
 	//result = strings.Replace(result, "'", "\\'", -1)
 	//result = strings.Replace(result, "\\\\'", "\\'", -1)
 
-	//return "'" + result + "'"
+	//return "'" + result + "'"x
 	return result
 }
 

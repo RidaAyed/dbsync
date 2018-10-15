@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
-	"encoding/json"
+	jsonOrig "encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,20 +20,27 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/json-iterator/go"
+
+	_ "net/http/pprof"
+
 	"bitbucket.org/modima/dbsync/internal/pkg/database"
 	"github.com/wunderlist/ttlcache"
 )
 
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
 const FETCH_SIZE_EVENTS = 1000 // Number of transaction events to fetch in one step
-const FETCH_SIZE_CONTACTS = 30 // Number of contacts to fetch in one step
-const MAX_DB_CONNECTIONS = 64
+const FETCH_SIZE_CONTACTS = 10 // Number of contacts to fetch in one step
+const WORKER_COUNT = 128
+const MAX_DB_CONNECTIONS = 32
 
 const (
-	baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
-	tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	//baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
+	//tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
 
-	//baseURL               = "https://api.dialfire.com"
-	//tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	baseURL               = "https://api.dialfire.com"
+	tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
 )
 
 /******************************************
@@ -46,6 +53,7 @@ var (
 	campaignToken string
 	mode          string
 	cntWorker     int
+	cntDBConn     int
 )
 
 /******************************************
@@ -68,7 +76,7 @@ func createLog(filePath string) (*log.Logger, error) {
 		return nil, err
 	}
 
-	var logger = log.New(logFile, "[DEBUG]", log.Ldate|log.Ltime|log.Lshortfile)
+	var logger = log.New(logFile, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
 	return logger, nil
 }
 
@@ -167,7 +175,8 @@ Example 2: Send all future transactions in campaign "MY_CAMPAIGN" to a webservic
 
 	cid := flag.String("c", "", "Campaign ID (required)")
 	token := flag.String("ct", "", "Campaign API token (required)")
-	workerCount := flag.Int("w", 128, "Number of simultaneous workers")
+	workerCount := flag.Int("w", WORKER_COUNT, "Number of simultaneous workers")
+	dbConnCount := flag.Int("d", MAX_DB_CONNECTIONS, "Maximum number of simultaneous database connections")
 	execMode := flag.String("a", "", `Execution mode:
 webhook ... Send all transactions to a webservice
 db_init ... Initialize a database with all transactions of the campaign, then stop
@@ -180,6 +189,7 @@ hi_updates_only ... only transactions of type 'update' that were triggered by a 
 	tPrefix := flag.String("fp", "", "Filter transactions by one or several task(-prefixes) (comma separated), e.g. 'fc_,qc_'")
 	URL := flag.String("url", "", `Mode webhook: URL pointing to a webservice that handles the transaction data
 Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host:port/database'`)
+	doProfiling := flag.Bool("p", false, `Enable profiling`)
 
 	flag.Parse()
 
@@ -197,6 +207,7 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 	}
 
 	cntWorker = *workerCount
+	cntDBConn = *dbConnCount
 	mode = *execMode
 	url := *URL
 
@@ -218,15 +229,18 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 
 	// Create logger
 	var err error
+	debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
 	//debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
-	debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + ".log")
-	if err != nil {
-		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
+	/*
+		debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + ".log")
 		if err != nil {
-			panic(err)
+			debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
+			if err != nil {
+				panic(err)
+			}
 		}
-	}
-	errorLog = log.New(os.Stdout, "[ERROR]", log.Ldate|log.Ltime|log.Lshortfile)
+	*/
+	errorLog = log.New(os.Stdout, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile)
 
 	// Load config
 	config, err = loadConfig("/var/opt/dbsync/" + campaignID + ".json")
@@ -237,6 +251,11 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 		}
 	}
 
+	// Start profiler
+	if *doProfiling {
+		go http.ListenAndServe(":8080", http.DefaultServeMux)
+	}
+
 	// Set start date from config file (iff not explicitly defined)
 	var startDate string
 	if *dateStart != "" {
@@ -244,6 +263,10 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 	} else {
 		startDate = config.Timestamp
 	}
+
+	debugLog.Printf("Mode: %v", mode)
+	debugLog.Printf("Campaign ID: %v", campaignID)
+	debugLog.Printf("Start date: %v", startDate)
 
 	if mode == "webhook" {
 
@@ -287,6 +310,10 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
+
+		// Configure connection pool
+		db.DB.SetMaxOpenConns(cntDBConn)
+		db.DB.SetMaxIdleConns(cntDBConn)
 
 		// Schema aktualisieren
 		prepareDatabase()
@@ -380,7 +407,7 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 		debugLog.Printf("Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
 
 		// Kontakt
-		var contact = taPointer.Contact
+		var contact = *taPointer.Contact
 		var taskLog = contact["$task_log"].([]interface{})
 		delete(contact, "$task_log")
 
@@ -487,8 +514,8 @@ func modeDatabaseInit() {
 		go dataSplitter(i, &wg3)
 	}
 
-	wg4.Add(MAX_DB_CONNECTIONS)
-	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
+	wg4.Add(cntDBConn)
+	for i := 0; i < cntDBConn; i++ {
 		go databaseUpdater(i, &wg4)
 	}
 
@@ -540,8 +567,8 @@ func modeDatabaseUpdate(startDate string) {
 		go dataSplitter(i, &wg4)
 	}
 
-	wg5.Add(MAX_DB_CONNECTIONS)
-	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
+	wg5.Add(cntDBConn)
+	for i := 0; i < cntDBConn; i++ {
 		go databaseUpdater(i, &wg5)
 	}
 
@@ -600,8 +627,8 @@ func modeDatabaseSync(startDate string) {
 		go eventFetcher(i, &wg3)
 	}
 
-	wg4.Add(MAX_DB_CONNECTIONS)
-	for i := 0; i < MAX_DB_CONNECTIONS; i++ {
+	wg4.Add(cntDBConn)
+	for i := 0; i < cntDBConn; i++ {
 		go databaseUpdater(i, &wg4)
 	}
 
@@ -851,7 +878,7 @@ type TAEvent struct {
 
 type TAPointerList struct {
 	ContactID string
-	Contact   map[string]interface{}
+	Contact   *map[string]interface{}
 	Pointer   []string
 }
 
@@ -947,12 +974,12 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				eventCache.Set(key, event.MD5)
 			}
 
-			// Batch in 1000er Schritten
+			// Batch in 30er Schritten
 			if len(eventsByContactID) >= FETCH_SIZE_CONTACTS || resp.Cursor == "" {
 				//debugLog.Printf("Eventlist %v", eventsByContactID)
 
 				if len(eventsByContactID) > 0 {
-					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
+					debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
 					chanContactFetcher <- eventsByContactID
 					eventsByContactID = make(map[string]TAPointerList)
 					eventCount = 0
@@ -1100,7 +1127,7 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 
 			var contact = c.(map[string]interface{})
 			var taPointer = eventsByContactID[contact["$id"].(string)]
-			taPointer.Contact = contact
+			taPointer.Contact = &contact
 
 			chanDataSplitter <- taPointer
 		}
@@ -1127,12 +1154,12 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 		//debugLog.Printf("Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
 
 		// Kontakt
-		var contact = pointerList.Contact
+		var contact = *pointerList.Contact
 		var taskLog = contact["$task_log"].([]interface{})
 
 		chanDatabaseUpdater <- database.Entity{
 			Type: "contact",
-			Data: contact, // Alle überflüssigen Felder entfernen
+			Data: &contact, // Alle überflüssigen Felder entfernen
 		}
 
 		if pointerList.Pointer != nil {
@@ -1151,7 +1178,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 				var tid = contact["$id"].(string) + transaction["fired"].(string)
 				if transaction["sequence_nr"] != nil {
-					tid += transaction["sequence_nr"].(json.Number).String()
+					tid += transaction["sequence_nr"].(jsonOrig.Number).String()
 				}
 				transaction["$id"] = hash(tid)
 				transaction["$contact_id"] = contact["$id"].(string)
@@ -1172,7 +1199,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 					var tid = contact["$id"].(string) + transaction["fired"].(string)
 					if transaction["sequence_nr"] != nil {
-						tid += transaction["sequence_nr"].(json.Number).String()
+						tid += transaction["sequence_nr"].(jsonOrig.Number).String()
 					}
 					transaction["$id"] = hash(tid)
 					transaction["$contact_id"] = contact["$id"].(string)
@@ -1181,7 +1208,6 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 				}
 			}
 		}
-
 	}
 
 	//debugLog.Printf("Stop database updater %v", n)
@@ -1194,7 +1220,7 @@ func insertTransaction(transaction map[string]interface{}) {
 	delete(transaction, "connections")
 	chanDatabaseUpdater <- database.Entity{
 		Type: "transaction",
-		Data: transaction,
+		Data: &transaction,
 	}
 
 	if connections == nil {
@@ -1212,7 +1238,7 @@ func insertTransaction(transaction map[string]interface{}) {
 		delete(connection, "recordings")
 		chanDatabaseUpdater <- database.Entity{
 			Type: "connection",
-			Data: connection,
+			Data: &connection,
 		}
 
 		if recordings == nil {
@@ -1227,7 +1253,7 @@ func insertTransaction(transaction map[string]interface{}) {
 
 			chanDatabaseUpdater <- database.Entity{
 				Type: "recording",
-				Data: recording,
+				Data: &recording,
 			}
 		}
 	}
@@ -1255,8 +1281,8 @@ func databaseUpdater(n int, wg *sync.WaitGroup) {
 		if err == nil {
 			// Save start date if transaction was stored successfully
 			if entity.Type == "transaction" {
-				debugLog.Printf("Update ts: %v", entity.Data["fired"].(string))
-				config.Timestamp = entity.Data["fired"].(string)
+				//debugLog.Printf("Update ts: %v", entity.Data["fired"].(string))
+				config.Timestamp = (*entity.Data)["fired"].(string)
 			}
 			counter[entity.Type+" success"]++
 		} else {
@@ -1281,13 +1307,13 @@ func upsertError(entity database.Entity, err error) {
 
 	switch entity.Type {
 	case "contact":
-		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", entity.Data["$id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", (*entity.Data)["$id"], err.Error())
 	case "transaction":
-		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", entity.Data["$contact_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", (*entity.Data)["$contact_id"], err.Error())
 	case "connection":
-		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", entity.Data["$transaction_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", (*entity.Data)["$transaction_id"], err.Error())
 	case "recordings":
-		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", entity.Data["$connection_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", (*entity).Data)["$connection_id"], err.Error())
 	}
 }
 
@@ -1342,7 +1368,7 @@ func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 
-	var decrement = time.Minute // Start Schrittgröße für Zurückgehen im Zeitintervall
+	var decrement = time.Hour // Start Schrittgröße für Zurückgehen im Zeitintervall
 	var nextTo = time.Now().UTC()
 	var nextFrom = nextTo.Add(-1 * decrement)
 
