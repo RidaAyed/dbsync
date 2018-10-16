@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
-	jsonOrig "encoding/json"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strconv"
@@ -20,18 +21,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/json-iterator/go"
-
-	_ "net/http/pprof"
-
 	"bitbucket.org/modima/dbsync/internal/pkg/database"
 	"github.com/wunderlist/ttlcache"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+//var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-const FETCH_SIZE_EVENTS = 100 // Number of transaction events to fetch in one step
-const FETCH_SIZE_CONTACTS = 1 // Number of contacts to fetch in one step
+const FETCH_SIZE_EVENTS = 120  // Number of transaction events to fetch in one step
+const FETCH_SIZE_CONTACTS = 30 // Number of contacts to fetch in one step
 const WORKER_COUNT = 128
 const MAX_DB_CONNECTIONS = 32
 
@@ -229,12 +226,12 @@ Mode db_*: DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:pa
 
 	// Create logger
 	var err error
-	debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
-	debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
+	//debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
 	//debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + ".log")
+	debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
 	if err != nil {
-		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
 		//debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
+		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
 		if err != nil {
 			panic(err)
 		}
@@ -412,15 +409,17 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 			break
 		}
 
-		debugLog.Printf("Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
+		//debugLog.Printf("Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
 
 		// Kontakt
-		var contact map[string]interface{}
-		if err := json.Unmarshal(taPointer.ContactData, &contact); err != nil {
-			errorLog.Printf("%v\n", err.Error())
-			break
-		}
-
+		/*
+			var contact map[string]interface{}
+			if err := json.Unmarshal(taPointer.ContactData, &contact); err != nil {
+				errorLog.Printf("%v\n", err.Error())
+				break
+			}
+		*/
+		var contact = *taPointer.Contact
 		var taskLog = contact["$task_log"].([]interface{})
 		delete(contact, "$task_log")
 
@@ -446,7 +445,7 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 				`state`:       state,
 			}
 
-			debugLog.Printf("Send transaction contact: %v | pointer: %v", taPointer.ContactID, p)
+			//debugLog.Printf("Send transaction contact: %v | pointer: %v", taPointer.ContactID, p)
 
 			payload, err := json.Marshal(data)
 			if err != nil {
@@ -745,6 +744,7 @@ func listContacts(cursor string, limit int) ([]byte, error) {
 	return result, nil
 }
 
+/*
 func getContact(contactID string) ([]byte, error) {
 
 	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/" + contactID + "/flat_view"
@@ -793,6 +793,7 @@ func getContact(contactID string) ([]byte, error) {
 
 	return result, nil
 }
+*/
 
 func getContacts(contactIDs []string) ([]byte, error) {
 
@@ -820,8 +821,6 @@ func getContacts(contactIDs []string) ([]byte, error) {
 			break
 		}
 
-		debugLog.Printf("GET contacts: %v - Status %v", url, resp.Status)
-
 		//debugLog.Printf("get contacts response %v", resp.Status)
 
 		if err != nil {
@@ -834,6 +833,7 @@ func getContacts(contactIDs []string) ([]byte, error) {
 		}
 
 		timeout := time.Second * time.Duration(math.Pow(2, float64(i)))
+		debugLog.Printf("[GET] %v | Status %v | Attempt: %v | Try next in %v ", url, resp.Status, i, timeout)
 		time.Sleep(timeout)
 	}
 
@@ -892,7 +892,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 			break
 		}
 
-		debugLog.Printf("GET transactions: %v - Status %v", url, resp.Status)
+		//debugLog.Printf("GET transactions: %v - Status %v", url, resp.Status)
 
 		if err != nil {
 			return nil, err
@@ -904,6 +904,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 		}
 
 		timeout := time.Second * time.Duration(math.Pow(2, float64(i)))
+		debugLog.Printf("[GET] %v | Status %v | Attempt: %v | Try next in %v ", url, resp.Status, i, timeout)
 		time.Sleep(timeout)
 	}
 
@@ -939,9 +940,10 @@ type TAEvent struct {
 }
 
 type TAPointerList struct {
-	ContactID   string
-	ContactData []byte
-	Pointer     []string
+	ContactID string
+	//ContactData []byte
+	Contact *map[string]interface{}
+	Pointer []string
 }
 
 type TimeRange struct {
@@ -972,8 +974,8 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		var from = timeRange.From.Format("2006-01-02T15:04:05")
-		var to = timeRange.To.Format("2006-01-02T15:04:05")
+		var from = timeRange.From.Format("2006-01-02T15:04:05.999")
+		var to = timeRange.To.Format("2006-01-02T15:04:05.999")
 
 		var params = map[string]string{}
 
@@ -1034,37 +1036,43 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 					eventsByContactID[event.ContactID] = pList
 				}
 				eventCache.Set(key, event.MD5)
-			}
 
-			// Chunkweises holen der Kontakte
-			if len(eventsByContactID) >= FETCH_SIZE_CONTACTS || resp.Cursor == "" {
-				//debugLog.Printf("Eventlist %v", eventsByContactID)
+				// Chunkweises holen der Kontakte
+				if len(eventsByContactID) >= FETCH_SIZE_CONTACTS {
+					//debugLog.Printf("Eventlist %v", eventsByContactID)
 
-				if len(eventsByContactID) > 0 {
-					debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
+					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
 					chanContactFetcher <- eventsByContactID
 					eventsByContactID = make(map[string]TAPointerList)
 					eventCount = 0
 				}
 			}
 
-			if resp.Cursor == "" {
-				debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v", n, eventCountTotal, params["from"], params["to"])
+			if resp.Cursor != "" {
+				params["cursor"] = resp.Cursor
+			} else {
+
+				// Letzter chunk
+				if len(eventsByContactID) > 0 {
+					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
+					chanContactFetcher <- eventsByContactID
+				}
 				// Acknoledge fetch DONE
 				if timeRange.Ack {
 					var duration = time.Duration(0)
 					if !timeRange.To.IsZero() {
 						duration = timeRange.To.Sub(timeRange.From)
 					}
+					debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v | (%v)", n, eventCountTotal, params["from"], params["to"], duration)
 					chanEventFetchDone <- EventFetchResult{
 						Duration: duration,
 						Count:    eventCountTotal,
 					}
+				} else {
+					debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v | (%v)", n, eventCountTotal, params["from"], params["to"])
 				}
 				break
 			}
-
-			params["cursor"] = resp.Cursor
 		}
 	}
 
@@ -1164,47 +1172,59 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		//debugLog.Printf("Fetch contacts %v\n", eventsByContactID)
-		debugLog.Printf("Contact fetcher %v: Load %v contacts", n, len(eventsByContactID))
+		//debugLog.Printf("Contact fetcher %v: Load %v contacts", n, len(eventsByContactID))
 
-		//var contactIDs = make([]string, 0, len(eventsByContactID))
-
-		// Load contacts one by one
+		var contactIDs = make([]string, 0, len(eventsByContactID))
 		for id := range eventsByContactID {
-			//contactIDs = append(contactIDs, id)
-			data, err := getContact(id)
+			contactIDs = append(contactIDs, id)
+		}
+
+		data, err := getContacts(contactIDs)
+		if err != nil {
+			errorLog.Printf("%v\n", err.Error())
+			break
+		}
+
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.UseNumber()
+		// read "["
+		_, err = dec.Token()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// while the array contains contacts
+		for dec.More() {
+
+			// decode one contact
+			var contact map[string]interface{}
+			err := dec.Decode(&contact)
 			if err != nil {
-				errorLog.Printf("%v\n", err.Error())
-				break
+				log.Fatal(err)
 			}
 
-			var taPointer = eventsByContactID[id]
-			taPointer.ContactData = data
+			/*
+				data, err := json.Marshal(contact)
+				if err != nil {
+					log.Fatal(err)
+				}
+			*/
 
+			//debugLog.Printf("%v", contact)
+
+			// send to splitter
+			var taPointer = eventsByContactID[contact["$id"].(string)]
+			//taPointer.ContactData = data
+			taPointer.Contact = &contact
 			chanDataSplitter <- taPointer
 		}
 
-		/*
-				var results []interface{}
-				d := json.NewDecoder(bytes.NewReader(data))
-				d.UseNumber()
-				if err:= d.Decode(&results); err != nil {
-					errorLog.Printf("%v\n", err.Error())
-					break
-				}
-
-
-			for _, c := range results {
-
-				var contact = c.(map[string]interface{})
-				var taPointer = eventsByContactID[contact["$id"].(string)]
-				taPointer.Contact = &contact
-
-				chanDataSplitter <- taPointer
-			}
-		*/
+		// read "]"
+		_, err = dec.Token()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-
 	//debugLog.Printf("Stop contact fechter %v", n)
 }
 
@@ -1226,18 +1246,21 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 		//debugLog.Printf("Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
 
 		// Kontakt
-		var data = pointerList.ContactData
-		var contact map[string]interface{}
-		d := json.NewDecoder(bytes.NewReader(data))
-		d.UseNumber()
-		if err := d.Decode(&contact); err != nil {
-			errorLog.Printf("%v\n", err.Error())
-			break
-		}
+		/*
+			var data = pointerList.ContactData
+			var contact map[string]interface{}
+			d := json.NewDecoder(bytes.NewReader(data))
+			d.UseNumber()
+			if err := d.Decode(&contact); err != nil {
+				errorLog.Printf("%v\n", err.Error())
+				break
+			}
+		*/
 
 		//debugLog.Printf("ContactData: %v", data)
 		//debugLog.Printf("Parsed contact: %v", contact)
 
+		var contact = *pointerList.Contact
 		var taskLog = contact["$task_log"].([]interface{})
 
 		chanDatabaseUpdater <- database.Entity{
@@ -1261,7 +1284,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 				var tid = contact["$id"].(string) + transaction["fired"].(string)
 				if transaction["sequence_nr"] != nil {
-					tid += transaction["sequence_nr"].(jsonOrig.Number).String()
+					tid += transaction["sequence_nr"].(json.Number).String()
 				}
 				transaction["$id"] = hash(tid)
 				transaction["$contact_id"] = contact["$id"].(string)
@@ -1282,7 +1305,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 					var tid = contact["$id"].(string) + transaction["fired"].(string)
 					if transaction["sequence_nr"] != nil {
-						tid += transaction["sequence_nr"].(jsonOrig.Number).String()
+						tid += transaction["sequence_nr"].(json.Number).String()
 					}
 					transaction["$id"] = hash(tid)
 					transaction["$contact_id"] = contact["$id"].(string)
@@ -1452,7 +1475,7 @@ func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
 	//var totalCount = 0                   // Gesamtanzahl Events
 	//var totalDuration = time.Duration(0) // Gesamtdauer
-	var curDuration = time.Minute * 10 // aktuelle Schrittgröße für Zurückgehen im Zeitintervall
+	var curDuration = time.Minute // aktuelle Schrittgröße für Zurückgehen im Zeitintervall
 
 	var nextTo = time.Now().UTC()
 	var nextFrom = nextTo.Add(-1 * curDuration)
@@ -1466,30 +1489,49 @@ loop:
 		select {
 
 		// TODO: Algorithmus überarbeiten... (danach ACK auf 'true' setzen)
-		// Dynamische Anpassung des Zeitintervalls
+		// Dynamische Anpassung des Zeitintervalls (zwischen 1s und 1h)
 		// Ziel: Anzahl d. gefetchten Events möglichst nah an FETCH_SIZE_EVENTS pro Zeitinterval
-		/*
-			case fetchResult := <-chanEventFetchDone: // Flusskontrolle
-				if fetchResult.Duration > 0 && fetchResult.Count > 0 {
-					totalCount += fetchResult.Count
-					totalDuration += fetchResult.Duration
-					curDuration = time.Duration((totalDuration.Seconds() / float64(totalCount)) * FETCH_SIZE_EVENTS * 1000000000) // Umrechnung in Nanosekunden
-
-					debugLog.Printf("ticker: totalCount %v", totalCount)
-					debugLog.Printf("ticker: totalDuration %v", totalDuration)
-					debugLog.Printf("ticker: Decrease timeframe interval to %v", curDuration)
+		case fetchResult := <-chanEventFetchDone: // Flusskontrolle
+			if fetchResult.Count == 0 {
+				curDuration += (curDuration / 100).Truncate(time.Millisecond) // Keine Events in Zeitraum --> Zeitspanne um 1% vergrößern
+				if curDuration > time.Hour {
+					curDuration = time.Hour
 				} else {
-					// Keine Events im Zeitraum --> Zeitraum verdoppeln
-					curDuration *= 2
-					debugLog.Printf("ticker: Increase timeframe interval to %v", curDuration)
+					debugLog.Printf("ticker: Increase time interval: %v", curDuration)
 				}
+			} else {
+				var diff = fetchResult.Count - FETCH_SIZE_EVENTS // Überhängende Events
+				if diff > 0 {
+					curDuration -= (curDuration / 100 * time.Duration(diff/FETCH_SIZE_EVENTS)).Truncate(time.Millisecond)
+					if curDuration < time.Second {
+						curDuration = time.Second
+					} else {
+						debugLog.Printf("ticker: Decrease time interval: %v", curDuration)
+					}
+				}
+			}
+
+		/*
+			if fetchResult.Duration > 0 && fetchResult.Count > 0 {
+				totalCount += fetchResult.Count
+				totalDuration += fetchResult.Duration
+				curDuration = time.Duration((totalDuration.Seconds() / float64(totalCount)) * FETCH_SIZE_EVENTS * 1000000000) // Umrechnung in Nanosekunden
+
+				debugLog.Printf("ticker: totalCount %v", totalCount)
+				debugLog.Printf("ticker: totalDuration %v", totalDuration)
+				debugLog.Printf("ticker: Decrease timeframe interval to %v", curDuration)
+			} else {
+				// Keine Events im Zeitraum --> Zeitraum verdoppeln
+				curDuration *= 2
+				debugLog.Printf("ticker: Increase timeframe interval to %v", curDuration)
+			}
 		*/
 		default: // Nächster Zeitintervall
 			if nextFrom.Before(timeStart) { // ...bis Startzeitpunkt erreicht ist
 				chanEventFetcher <- TimeRange{
 					From: timeStart,
 					To:   nextTo,
-					Ack:  false,
+					Ack:  true,
 				}
 				break loop
 			}
@@ -1497,7 +1539,7 @@ loop:
 			chanEventFetcher <- TimeRange{
 				From: nextFrom,
 				To:   nextTo,
-				Ack:  false,
+				Ack:  true,
 			}
 
 			nextTo = nextFrom
