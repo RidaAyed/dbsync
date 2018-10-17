@@ -25,7 +25,7 @@ import (
 	"github.com/wunderlist/ttlcache"
 )
 
-const FETCH_SIZE_EVENTS = 120  // Number of transaction events to fetch in one step
+const FETCH_SIZE_EVENTS = 1000 // Number of transaction events to fetch in one step
 const FETCH_SIZE_CONTACTS = 30 // Number of contacts to fetch in one step
 const WORKER_COUNT = 128
 const MAX_DB_CONNECTIONS = 32
@@ -849,6 +849,7 @@ func getTransactions(params map[string]string) ([]byte, error) {
 * WORKER
 *******************************************/
 
+/*
 type FetchResult struct {
 	Count   int
 	Results []struct {
@@ -862,6 +863,12 @@ type FetchResult struct {
 		ContactID string `json:"contact_id"`
 	}
 	Cursor string
+}
+*/
+type FetchResult struct {
+	Count   int
+	Results []string
+	Cursor  string
 }
 
 type TAPointerList struct {
@@ -932,9 +939,16 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 			// MD5 Prüfung
 			for _, event := range resp.Results {
 
-				var key = event.ContactID + event.Fired + event.Seqnr
+				// "2018-10-17T08:07:46.468Z0217|cf44c921a79577858dea5a5b89e9f219|6EU52ECUGEJPHEJV|6,166"
+				var splits = strings.Split(event, "|")
+				var fired = splits[0]
+				var md5 = splits[1]
+				var contactID = splits[2]
+				var pointer = splits[3]
+
+				var key = fired + contactID
 				oldHash, exists := eventCache.Get(key)
-				if exists && oldHash == event.MD5 {
+				if exists && oldHash == md5 {
 					continue
 				}
 
@@ -942,24 +956,23 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				eventCount++
 				eventCountTotal++
 
-				var p = event.Pointer
 				if !exists {
-					p += ",new" // new event
+					pointer += ",new" // new event
 				} else {
-					p += ",updated" // updated event
+					pointer += ",updated" // updated event
 				}
 
-				if eventsByContactID[event.ContactID].ContactID == "" {
-					eventsByContactID[event.ContactID] = TAPointerList{
-						ContactID: event.ContactID,
-						Pointer:   []string{p},
+				if eventsByContactID[contactID].ContactID == "" {
+					eventsByContactID[contactID] = TAPointerList{
+						ContactID: contactID,
+						Pointer:   []string{pointer},
 					}
 				} else {
-					var pList = eventsByContactID[event.ContactID]
-					pList.Pointer = append(pList.Pointer, p)
-					eventsByContactID[event.ContactID] = pList
+					var pList = eventsByContactID[contactID]
+					pList.Pointer = append(pList.Pointer, pointer)
+					eventsByContactID[contactID] = pList
 				}
-				eventCache.Set(key, event.MD5)
+				eventCache.Set(key, md5)
 
 				// Chunkweises holen der Kontakte
 				if len(eventsByContactID) >= FETCH_SIZE_CONTACTS {
