@@ -996,7 +996,7 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				params["cursor"] = resp.Cursor
 
 				// Request throttling
-				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current %v | (sleep %v)", n, eventCountTotal, params["from"], params["to"], fired, timeout)
+				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current: %v | (sleep %v)", n, eventCountTotal, params["from"], params["to"], fired, timeout)
 				time.Sleep(timeout)
 				if timeout > time.Second {
 					timeout -= timeout / 10 // 10 % verringern
