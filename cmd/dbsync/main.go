@@ -221,17 +221,16 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 
 	// Create logger
 	var err error
-	var debugLog *log.Logger
 	if DEBUG_MODE {
 		debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
 	} else {
 		debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
-	}
-	if err != nil {
-		//debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
-		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
 		if err != nil {
-			panic(err)
+			//debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
+			debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	errorLog = log.New(os.Stdout, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile)
@@ -1037,6 +1036,7 @@ var chanDone = make(chan bool)
 
 func statisticAggregator() {
 
+	var start = time.Now()
 	var statistics = make(map[string]uint)
 
 	for {
@@ -1055,6 +1055,7 @@ func statisticAggregator() {
 	for sType, sCount := range statistics {
 		debugLog.Printf("%v: %v", sType, sCount)
 	}
+	debugLog.Printf("duration: %v", time.Since(start))
 	chanDone <- true
 }
 
