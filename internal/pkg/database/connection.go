@@ -36,7 +36,7 @@ var tableSchemas = map[string][]map[string]string{
 		{"$entry_date": "string"},
 		{"$follow_up_date": "string"},
 		{"$source": "string"},
-		{"$comment": "string"},
+		{"$comment": "text"},
 		{"$error": "string"},
 		{"$trigger": "string"},
 		{"$owner": "string"},
@@ -102,34 +102,47 @@ var tableSchemas = map[string][]map[string]string{
 	},
 }
 
-var typeMap = map[string]map[string]string{
+var dbTypes = map[string]map[string]string{
 	"mysql": {
 		"string":      "varchar(255)",
-		"int":         "int",
-		"float64":     "float",
-		"json.Number": "float",
-		"bool":        "tinyint",
+		"text":        "text",
+		"int":         "numeric",
+		"float64":     "numeric",
+		"json.Number": "numeric",
+		"bool":        "boolean",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"postgres": {
-		"string":      "text",
-		"int":         "int",
-		"float64":     "decimal",
-		"json.Number": "decimal",
-		"bool":        "smallint",
+		"string":      "varchar(255)",
+		"text":        "text",
+		"int":         "numeric",
+		"float64":     "numeric",
+		"json.Number": "numeric",
+		"bool":        "boolean",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"sqlserver": {
 		"string":      "nvarchar(255)",
-		"int":         "int",
-		"float64":     "float",
-		"json.Number": "float",
+		"text":        "text",
+		"int":         "numeric",
+		"float64":     "numeric",
+		"json.Number": "numeric",
 		"bool":        "bit",
-		"map[string]interface {}": "nvarchar(4000)", // Maximum
-		"[]interface {}":          "nvarchar(4000)", // Maximum
+		"map[string]interface {}": "nvarchar(4000)", // Maximum is 4000
+		"[]interface {}":          "nvarchar(4000)", // Maximum is 4000
 	},
+}
+
+func (con *DBConnection) toDBType(gotype string) string {
+
+	var dbType = dbTypes[con.DBType][gotype]
+	if dbType == "" {
+		panic("unsupported type " + gotype)
+	}
+
+	return dbType
 }
 
 var errorLog *log.Logger
@@ -228,8 +241,13 @@ func (con *DBConnection) Upsert(entity Entity) error {
 	var fieldNames []string
 	var values []interface{}
 	for name, value := range data {
+		// Skip empty values (all string in contacts)
+		if entity.Type == "contact" && len(value.(string)) == 0 {
+			continue
+		}
 		fieldNames = append(fieldNames, name)
 		values = append(values, con.toDBString(value))
+		//values = append(values, value)
 	}
 
 	//debugLog.Printf("FIELDS: %v | VALUES: %v", fieldNames, values)
@@ -248,7 +266,8 @@ func (con *DBConnection) Upsert(entity Entity) error {
 		values = append([]interface{}{(*entity.Data)["$id"]}, values...)
 	}
 
-	//debugLog.Printf("%v", values)
+	//debugLog.Printf("%v\n\n", fieldNames)
+	//debugLog.Printf("%v\n\n", values)
 
 	// Execute statement
 	_, err = stmt.Exec(values...)
@@ -321,7 +340,33 @@ func (con *DBConnection) UpdateTables(campaign Campaign) error {
 			continue
 		}
 
-		tableSchemas["contact"] = append(tableSchemas["contact"], map[string]string{element.Name: "string"})
+		/* Kampagnentypen:
+		"text":         "string",
+		"date":         "string",
+		"calendar":     "string",
+		"phone":        "string",
+		"radiogroup":   "string",
+		"dropdown":     "string",
+		"autocomplete": "string",
+		"checkbox":     "bool",
+		"number":       "int", // TODO: Fließkomma unterstützen
+		"textarea":     "-",   // überspringen (nicht relevant)
+		*/
+		// Abbildung auf datenbanktype
+		var dbType string
+		switch element.FieldType {
+
+		case "checkbox":
+			dbType = "bool"
+
+		case "number":
+			dbType = "int"
+
+		default:
+			dbType = "string"
+		}
+
+		tableSchemas["contact"] = append(tableSchemas["contact"], map[string]string{element.Name: dbType})
 		count++
 
 		// Maximal 100 Elemente
@@ -421,9 +466,11 @@ func (con *DBConnection) toDBString(value interface{}) string {
 	case string:
 		result = value.(string)
 		// Auf 255 Zeichen beschränken
-		if len(result) > 255 {
-			result = result[:255]
-		}
+		/*
+			if len(result) > 255 {
+				result = result[:255]
+			}
+		*/
 
 	default:
 		panic("unsupported type " + reflect.TypeOf(value).String())
@@ -435,16 +482,6 @@ func (con *DBConnection) toDBString(value interface{}) string {
 
 	//return "'" + result + "'"x
 	return result
-}
-
-func (con *DBConnection) toDBType(gotype string) string {
-
-	var dbType = typeMap[con.DBType][gotype]
-	if dbType == "" {
-		panic("unsupported type " + gotype)
-	}
-
-	return dbType
 }
 
 func (con *DBConnection) updateColumns(tableName string, columns []map[string]string) error {

@@ -25,17 +25,15 @@ import (
 	"github.com/wunderlist/ttlcache"
 )
 
-const FETCH_SIZE_EVENTS = 1000 // Number of transaction events to fetch in one step
-const FETCH_SIZE_CONTACTS = 30 // Number of contacts to fetch in one step
-const WORKER_COUNT = 128
-const MAX_DB_CONNECTIONS = 32
-
 const (
-	//baseURL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
-	//tokenRawContactReader = "ts5uaUtG9QbahmeF6Qrk4tmv6Ru_uV7MHEQJJac_-Pulo3nlvGLcrvCvBAD-hZ_6azy9vUtIK6gJxrw1p1krfW3btMwIimlrh2OrO4UTKI6" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
-
-	baseURL               = "https://api.dialfire.com"
-	tokenRawContactReader = "rleKVIRD9XnF3g0zxZSiFcEp0y0FnijlS6ddPDKlCJhmdvfGajvwwBvzwjLtbUFoTbburstKdJvRZ5BFbfOpwioidN6ZFzB5YblqkBCD4QA" // Access token for contact listing (/data/campaigns/*/contacts/) - DEV
+	DEBUG_MODE             = false // Verbose logging
+	FETCH_SIZE_EVENTS      = 1000  // Number of transaction events to fetch in one step
+	FETCH_SIZE_CONTACT_IDS = 1000  // Number of contact ids to fetch in one step
+	FETCH_SIZE_CONTACTS    = 30    // Number of contacts to fetch in one step
+	WORKER_COUNT           = 128   // Number of workers
+	MAX_DB_CONNECTIONS     = 32    // Number of simultaneous database connections
+	BASE_URL               = "https://api.dialfire.com"
+	//BASE_URL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
 )
 
 /******************************************
@@ -72,6 +70,9 @@ func createLog(filePath string) (*log.Logger, error) {
 	}
 
 	var logger = log.New(logFile, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	logger.Printf("Logfile: %v", filePath)
+
 	return logger, nil
 }
 
@@ -97,11 +98,13 @@ func loadConfig(filePath string) (*AppConfig, error) {
 		config = AppConfig{
 			Timestamp: time.Now().UTC().Format(time.RFC3339)[:19], // default: current UTC time in format "2006-01-02T15:04:05"
 		}
-		debugLog.Printf("Configuration file %v not found!", filePath)
+		//debugLog.Printf("Configuration file %v not found!", filePath)
 	}
 
 	json.Unmarshal(configFile, &config)
 	config.Path = filePath
+
+	debugLog.Printf("Configuration: %v", config.Path)
 
 	return &config, nil
 }
@@ -122,11 +125,6 @@ func (c *AppConfig) save() {
 * teardown TASKS (ON KILL)
 ********************************************/
 func teardown() {
-
-	// Close database connection
-	if db != nil {
-		db.DB.Close()
-	}
 
 	// Save configuration
 	config.save()
@@ -156,8 +154,8 @@ func main() {
 		var description = `This tool can be used to export all transactions on contacts in dialfire to either a DBMS or a webservice. The export is campaign based (flag 'c').
 A valid access token for the specified campaign is required (flag 'ct'). The token can be created in Dialfire. Further a custom start date can be specified to delimit the export (flag 's').
 		
-Example 1: Insert all transactions that occured after the 01. February 2018 in campaign "MY_CAMPAIGN" to a local running instance of SQL Server:
-	./dbsync -a db_sync  -c MY_CAMPAIGN_ID -ct MY_CAMPAIGN_TOKEN -s 2018-02-01 -url 'sqlserver://my_user:my_password@localhost:1433/my_database'
+Example 1: Insert all transactions that occured after the 01. February 2018 in campaign "MY_CAMPAIGN" to a local running instance of SQL Server. Filter only user interactions on contacts in tasks starting with prefix 'fc_' or 'qc_':
+	./dbsync -a db_sync -fm hi_updates_only -fp 'fc_,qc_' -c MY_CAMPAIGN_ID -ct MY_CAMPAIGN_TOKEN -s 2018-02-01 -url 'sqlserver://my_user:my_password@localhost:1433/my_database'
 		
 Example 2: Send all future transactions in campaign "MY_CAMPAIGN" to a webservice (The webservice should accept JSON data and respnd with status code 200 ... 299 on success):
 	./dbsync -a webhook -c MY_CAMPAIGN_ID -ct MY_CAMPAIGN_TOKEN -url 'https://example.com/api/transactions/'`
@@ -174,7 +172,7 @@ Example 2: Send all future transactions in campaign "MY_CAMPAIGN" to a webservic
 	execMode := flag.String("a", "", `Execution mode:
 webhook ... Send all transactions to a webservice
 db_init ... Initialize a database with all transactions of the campaign, then stop
-db_update ... Update a database with all transactions after specified start date (CLI arg 's'), then stop (default is one week)
+db_update ... Update a database with all transactions after specified start date (CLI arg 's'), then stop (default start date is one week ago)
 db_sync ...  Update a database with all future transactions, optionally go back to a specified start date (CLI arg 's')`)
 	dateStart := flag.String("s", "", "Start date in the format '2006-01-02T15:04:05'")
 	filterMode := flag.String("fm", "", `Transaction filter mode:
@@ -223,9 +221,12 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 
 	// Create logger
 	var err error
-	//debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
-	//debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + ".log")
-	debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
+	var debugLog *log.Logger
+	if DEBUG_MODE {
+		debugLog = log.New(os.Stdout, "[DEBUG] ", log.Ldate|log.Ltime|log.Lshortfile)
+	} else {
+		debugLog, err = createLog("/var/log/dbsync/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
+	}
 	if err != nil {
 		//debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + ".log")
 		debugLog, err = createLog(os.Getenv("HOME") + "/.dbsync/logs/" + campaignID + "_" + mode + "_" + time.Now().Format("20060102150405") + ".log")
@@ -368,29 +369,27 @@ func modeWebhook(url string, startDate string) {
 
 	debugLog.Printf("Mode: Webhook")
 
-	var wg1, wg2, wg3, wg4 sync.WaitGroup
+	var wg1, wg2, wg3 sync.WaitGroup
 
-	// Events rückwärts laden, falls Startdatum gesetzt
-	if startDate != "" {
-		wg1.Add(1)
-		go reverseTicker(startDate, &wg1)
-	}
-
+	// Start worker
+	wg1.Add(cntWorker)
 	wg2.Add(cntWorker)
 	wg3.Add(cntWorker)
-	wg4.Add(cntWorker)
 	for i := 0; i < cntWorker; i++ {
+		go eventFetcher(i, &wg1)
+		go contactFetcher(i, &wg2)
+		go webhookSender(i, url, &wg3)
+	}
 
-		go eventFetcher(i, &wg2)
-		go contactFetcher(i, &wg3)
-		go webhookSender(i, url, &wg4)
+	// Events aus Vergangenheit laden
+	if startDate != "" {
+		chanEventFetcher <- TimeRange{
+			From: startDate,
+		}
 	}
 
 	// Runs forever
 	ticker()
-
-	// Cleanup
-	teardown()
 }
 
 func webhookSender(n int, url string, wg *sync.WaitGroup) {
@@ -537,6 +536,11 @@ func modeDatabaseInit() {
 	close(chanStatistics)
 	<-chanDone // Wait until statistics have been logged
 
+	// Close database connection
+	if db != nil {
+		db.DB.Close()
+	}
+
 	// Cleanup
 	teardown()
 }
@@ -549,50 +553,56 @@ func modeDatabaseUpdate(startDate string) {
 
 	debugLog.Printf("Mode: Database Update starting at " + startDate)
 
-	var wg1, wg2, wg3, wg4, wg5 sync.WaitGroup
-
-	wg1.Add(1)
-	go reverseTicker(startDate, &wg1)
+	var wg1, wg2, wg3, wg4 sync.WaitGroup
 
 	// Start worker
+	wg1.Add(cntWorker)
 	wg2.Add(cntWorker)
 	wg3.Add(cntWorker)
-	wg4.Add(cntWorker)
 	for i := 0; i < cntWorker; i++ {
-
-		go eventFetcher(i, &wg2)
-		go contactFetcher(i, &wg3)
-		go dataSplitter(i, &wg4)
+		go eventFetcher(i, &wg1)
+		go contactFetcher(i, &wg2)
+		go dataSplitter(i, &wg3)
 	}
 
-	wg5.Add(cntDBConn)
+	// Start database updater
+	wg4.Add(cntDBConn)
 	for i := 0; i < cntDBConn; i++ {
-		go databaseUpdater(i, &wg5)
+		go databaseUpdater(i, &wg4)
 	}
 
 	go statisticAggregator()
 
+	chanEventFetcher <- TimeRange{
+		From: startDate,
+		To:   time.Now().UTC().Format("2006-01-02T15:04:05.999"),
+	}
+
 	// 1. Wait until time range has been past
-	wg1.Wait()
-	//debugLog.Printf("Iterate time range DONE")
+	<-chanEventFetchDone
 	close(chanEventFetcher)
 
-	wg2.Wait()
+	wg1.Wait()
 	debugLog.Printf("Event fetch DONE")
 	close(chanContactFetcher)
 
-	wg3.Wait()
+	wg2.Wait()
 	debugLog.Printf("Contact fetch DONE")
 	close(chanDataSplitter)
 
-	wg4.Wait()
+	wg3.Wait()
 	debugLog.Printf("Data split DONE")
 	close(chanDatabaseUpdater)
 
-	wg5.Wait()
+	wg4.Wait()
 	debugLog.Printf("Database update DONE")
 	close(chanStatistics)
 	<-chanDone // Wait until statistics have been logged
+
+	// Close database connection
+	if db != nil {
+		db.DB.Close()
+	}
 
 	// Cleanup
 	teardown()
@@ -608,32 +618,31 @@ func modeDatabaseSync(startDate string) {
 
 	var wg1, wg2, wg3, wg4 sync.WaitGroup
 
-	// Events rückwärts laden, falls Startdatum gesetzt
-	if startDate != "" {
-		wg1.Add(1)
-		go reverseTicker(startDate, &wg1)
-	}
-
 	// Start worker
 	wg1.Add(cntWorker)
 	wg2.Add(cntWorker)
 	wg3.Add(cntWorker)
 	for i := 0; i < cntWorker; i++ {
-
-		go dataSplitter(i, &wg1)
-		go contactFetcher(i, &wg2)
-		go eventFetcher(i, &wg3)
+		go eventFetcher(i, &wg1)
+		go dataSplitter(i, &wg2)
+		go contactFetcher(i, &wg3)
 	}
 
+	// Start database updater
 	wg4.Add(cntDBConn)
 	for i := 0; i < cntDBConn; i++ {
 		go databaseUpdater(i, &wg4)
 	}
 
-	ticker()
+	// Events aus Vergangenheit laden
+	if startDate != "" {
+		chanEventFetcher <- TimeRange{
+			From: startDate,
+		}
+	}
 
-	// Cleanup
-	teardown()
+	// Runs forever
+	ticker()
 }
 
 /*******************************************
@@ -641,7 +650,7 @@ func modeDatabaseSync(startDate string) {
 ********************************************/
 func getCampaign() ([]byte, error) {
 
-	url := baseURL + "/api/campaigns/" + campaignID
+	url := BASE_URL + "/api/campaigns/" + campaignID
 
 	//debugLog.Printf("Load contacts: %v\n", contactIDs)
 
@@ -687,17 +696,19 @@ func getCampaign() ([]byte, error) {
 	return result, nil
 }
 
-func listContacts(cursor string, limit int) ([]byte, error) {
+func getContactIds(cursor string, limit int) ([]byte, error) {
 
-	url := baseURL + "/data/campaigns/" + campaignID + "/contacts/?_type_=f&_limit_=" + strconv.Itoa(limit) + "&_name___GT=" + cursor
+	url := BASE_URL + "/api/campaigns/" + campaignID + "/contacts/ids/?limit=" + strconv.Itoa(limit) + "&cursor=" + cursor
 
-	//debugLog.Printf("List Contacts: %v\n", url)
+	if DEBUG_MODE {
+		debugLog.Printf("[GET] %v", url)
+	}
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+tokenRawContactReader)
+	req.Header.Set("Authorization", "Bearer "+campaignToken)
 
 	var resp *http.Response
 	for i := 0; i < 10; i++ {
@@ -716,6 +727,7 @@ func listContacts(cursor string, limit int) ([]byte, error) {
 		}
 
 		timeout := time.Second * time.Duration(math.Pow(2, float64(i)))
+		debugLog.Printf("[GET] %v | attempt: %v | status %v | next try in %v", url, i, resp.Status, timeout)
 		time.Sleep(timeout)
 	}
 
@@ -731,9 +743,11 @@ func listContacts(cursor string, limit int) ([]byte, error) {
 
 func getContacts(contactIDs []string) ([]byte, error) {
 
-	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/flat_view"
+	url := BASE_URL + "/api/campaigns/" + campaignID + "/contacts/"
 
-	//debugLog.Printf("Load contacts: %v\n", contactIDs)
+	if DEBUG_MODE {
+		debugLog.Printf("[GET] %v", url)
+	}
 
 	data, err := json.Marshal(contactIDs)
 	if err != nil {
@@ -784,9 +798,9 @@ var eventOptions = map[string]string{
 }
 
 // Parameters: from string, to string, cursor string
-func getTransactions(params map[string]string) ([]byte, error) {
+func getTransactionEvents(params map[string]string) ([]byte, error) {
 
-	url := baseURL + "/api/campaigns/" + campaignID + "/contacts/transactions/?"
+	url := BASE_URL + "/api/campaigns/" + campaignID + "/contacts/transactions/?"
 
 	//debugLog.Printf("Params %v", params)
 
@@ -805,7 +819,9 @@ func getTransactions(params map[string]string) ([]byte, error) {
 	// Limit
 	url += "limit=" + strconv.Itoa(FETCH_SIZE_EVENTS)
 
-	//debugLog.Printf("[GET] %v", url)
+	if DEBUG_MODE {
+		debugLog.Printf("[GET] %v", url)
+	}
 
 	var req *http.Request
 	var err error
@@ -866,9 +882,9 @@ type FetchResult struct {
 }
 */
 type FetchResult struct {
-	Count   int
-	Results []string
-	Cursor  string
+	Count   int      `json:"count"`
+	Results []string `json:"results"`
+	Cursor  string   `json:"cursor"`
 }
 
 type TAPointerList struct {
@@ -878,19 +894,13 @@ type TAPointerList struct {
 }
 
 type TimeRange struct {
-	From time.Time
-	To   time.Time
-	Ack  bool // Indicates if acknoledgement is required (for flow control)
-}
-
-type EventFetchResult struct {
-	Duration time.Duration // Timespan
-	Count    int           // Number of events
+	From string
+	To   string
 }
 
 var chanEventFetcher = make(chan TimeRange)
-var chanEventFetchDone = make(chan EventFetchResult, 100) // Channel für DONE Message von event fetcher (liefert Anzahl d. Evens zurück)
-var eventCache = ttlcache.NewCache(time.Minute)           // Autoextend bei GET
+var chanEventFetchDone = make(chan int)             // Returns number of fetched events
+var eventCache = ttlcache.NewCache(2 * time.Minute) // (2 Minuten) Autoextend bei GET
 
 func eventFetcher(n int, wg *sync.WaitGroup) {
 
@@ -905,25 +915,24 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		var from = timeRange.From.Format("2006-01-02T15:04:05.999")
-		var to = timeRange.To.Format("2006-01-02T15:04:05.999")
+		//debugLog.Printf("Event fetcher %v: %v", n, timeRange)
 
-		var params = map[string]string{}
-
-		if !timeRange.From.IsZero() {
-			params["from"] = from
-		}
-		if !timeRange.To.IsZero() {
-			params["to"] = to
+		var params = map[string]string{
+			"from": timeRange.From,
 		}
 
+		if timeRange.To != "" {
+			params["to"] = timeRange.To
+		}
+
+		var timeout = time.Second * 10 // Aktuelles timeout zwischen zwei Abfragen --> Langsam skalieren
 		var eventCount = 0
 		var eventCountTotal = 0
 		var eventsByContactID = map[string]TAPointerList{}
 		for {
 
 			// Transaktionen laden
-			data, err := getTransactions(params)
+			data, err := getTransactionEvents(params)
 			if err != nil {
 				errorLog.Printf("%v\n", err.Error())
 				break
@@ -936,16 +945,17 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				break
 			}
 
-			// MD5 Prüfung
+			var fired string
 			for _, event := range resp.Results {
 
 				// "2018-10-17T08:07:46.468Z0217|cf44c921a79577858dea5a5b89e9f219|6EU52ECUGEJPHEJV|6,166"
 				var splits = strings.Split(event, "|")
-				var fired = splits[0]
+				fired = splits[0]
 				var md5 = splits[1]
 				var contactID = splits[2]
 				var pointer = splits[3]
 
+				// MD5 Prüfung
 				var key = fired + contactID
 				oldHash, exists := eventCache.Get(key)
 				if exists && oldHash == md5 {
@@ -985,26 +995,26 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 
 			if resp.Cursor != "" {
 				params["cursor"] = resp.Cursor
+
+				// Request throttling
+				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current %v | (sleep %v)", n, eventCountTotal, params["from"], params["to"], fired, timeout)
+				time.Sleep(timeout)
+				if timeout > time.Second {
+					timeout -= timeout / 10 // 10 % verringern
+				} else {
+					timeout = time.Second
+				}
 			} else {
+
+				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v", n, eventCountTotal, params["from"], params["to"])
 
 				// Letzter chunk
 				if len(eventsByContactID) > 0 {
-					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
 					chanContactFetcher <- eventsByContactID
 				}
-				// Acknoledge fetch DONE
-				if timeRange.Ack {
-					var duration = time.Duration(0)
-					if !timeRange.To.IsZero() {
-						duration = timeRange.To.Sub(timeRange.From)
-					}
-					debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v | (%v)", n, eventCountTotal, params["from"], params["to"], duration)
-					chanEventFetchDone <- EventFetchResult{
-						Duration: duration,
-						Count:    eventCountTotal,
-					}
-				} else {
-					debugLog.Printf("Event fetcher %v: %v transactions | from: %v | to: %v", n, eventCountTotal, params["from"], params["to"])
+
+				if timeRange.To != "" {
+					chanEventFetchDone <- eventCountTotal
 				}
 				break
 			}
@@ -1019,7 +1029,7 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 *******************************************/
 type Statistic struct {
 	Type  string
-	Count int
+	Count uint
 }
 
 var chanStatistics = make(chan Statistic)
@@ -1027,7 +1037,7 @@ var chanDone = make(chan bool)
 
 func statisticAggregator() {
 
-	var statistics = make(map[string]int)
+	var statistics = make(map[string]uint)
 
 	for {
 
@@ -1048,43 +1058,62 @@ func statisticAggregator() {
 	chanDone <- true
 }
 
-type ListingResponse struct {
-	Results []map[string]interface{} `json:"_results_"`
-	Count   int                      `json:"_count_"`
-}
-
 func contactLister(wg *sync.WaitGroup) {
 
 	//debugLog.Printf("Start contact lister")
 
 	defer wg.Done()
 
-	var limit = 100
+	var timeout = time.Second * 10 // Aktuelles timeout zwischen zwei Abfragen --> Langsam skalieren
+	var limit = FETCH_SIZE_CONTACT_IDS
 	var cursor string
+	var contactsTotal = 0
 	for {
 
-		data, err := listContacts(cursor, limit)
+		data, err := getContactIds(cursor, limit)
 		if err != nil {
 			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
-		var resp ListingResponse
+		var resp FetchResult
 		if err = json.Unmarshal(data, &resp); err != nil {
 			errorLog.Printf("%v\n", err.Error())
 			break
 		}
 
 		var eventsByContactID = map[string]TAPointerList{}
-		for _, r := range resp.Results {
-
-			var contactID = r["_name_"].(string)
-			cursor = contactID
+		for _, contactID := range resp.Results {
 			eventsByContactID[contactID] = TAPointerList{}
-		}
-		chanContactFetcher <- eventsByContactID
+			contactsTotal++
 
-		if resp.Count < limit {
+			// Chunkweises holen der Kontakte
+			if len(eventsByContactID) >= FETCH_SIZE_CONTACTS {
+				chanContactFetcher <- eventsByContactID
+				eventsByContactID = make(map[string]TAPointerList)
+			}
+		}
+
+		if resp.Cursor != "" {
+			cursor = resp.Cursor
+
+			// Request throttling
+			debugLog.Printf("Contact lister: %v contacts (sleep %v)", contactsTotal, timeout)
+			time.Sleep(timeout)
+			if timeout > time.Second {
+				timeout -= timeout / 10 // 10 % verringern
+			} else {
+				timeout = time.Second
+			}
+		} else {
+
+			debugLog.Printf("Contact lister: %v contacts", contactsTotal)
+
+			// Letzter chunk
+			if len(eventsByContactID) > 0 {
+				chanContactFetcher <- eventsByContactID
+			}
+
 			break
 		}
 	}
@@ -1284,7 +1313,7 @@ func databaseUpdater(n int, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 
-	var counter = map[string]int{}
+	var counter = map[string]uint{}
 
 	for {
 
@@ -1323,13 +1352,13 @@ func upsertError(entity database.Entity, err error) {
 
 	switch entity.Type {
 	case "contact":
-		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", (*entity.Data)["$id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$id"], err.Error(), entity.Data)
 	case "transaction":
-		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", (*entity.Data)["$contact_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$contact_id"], err.Error(), entity.Data)
 	case "connection":
-		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", (*entity.Data)["$transaction_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$transaction_id"], err.Error(), entity.Data)
 	case "recordings":
-		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", (*entity.Data)["$connection_id"], err.Error())
+		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$connection_id"], err.Error(), entity.Data)
 	}
 }
 
@@ -1340,34 +1369,41 @@ func ticker() {
 
 	//debugLog.Printf("Start ticker")
 
-	tMin := time.NewTicker(time.Second * 20)
-	tHour := time.NewTicker(time.Minute * 20)
-	t12Hour := time.NewTicker(time.Hour * 4)
+	tMin := time.NewTicker(time.Minute)
+	//tHour := time.NewTicker(time.Hour)
+	//t12Hour := time.NewTicker(12 * time.Hour)
 
 	for {
+
+		var now = time.Now().UTC()
 
 		select {
 
 		case <-tMin.C:
 			chanEventFetcher <- TimeRange{
-				From: time.Now().UTC().Add(-1 * time.Minute),
+				From: now.Add(-2 * time.Minute).Format("2006-01-02T15:04:05.999"),
+				To:   now.Format("2006-01-02T15:04:05.999"),
 			}
 
-		case <-tHour.C:
-			chanEventFetcher <- TimeRange{
-				From: time.Now().UTC().Add(-1 * time.Hour),
-			}
+			/*
+				case <-tHour.C:
+					chanEventFetcher <- TimeRange{
+						From: now.Add(-2 * time.Hour).Format("2006-01-02T15:04:05.999"),
+						To:   now.Format("2006-01-02T15:04:05.999"),
+					}
 
-		case <-t12Hour.C:
-			chanEventFetcher <- TimeRange{
-				From: time.Now().UTC().Add(-12 * time.Hour),
-			}
-
+				case <-t12Hour.C:
+					chanEventFetcher <- TimeRange{
+						From: time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.999"),
+						To:   now.Format("2006-01-02T15:04:05.999"),
+					}
+			*/
 		}
 	}
 }
 
 /** läuft zurück bis zum angegebenen Startdatum zurück und beendet sich anschließend**/
+/*
 func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
 	//debugLog.Printf("Start reverse ticker")
@@ -1383,10 +1419,7 @@ func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 
-	//var totalCount = 0                   // Gesamtanzahl Events
-	//var totalDuration = time.Duration(0) // Gesamtdauer
 	var curDuration = time.Minute // aktuelle Schrittgröße für Zurückgehen im Zeitintervall
-
 	var nextTo = time.Now().UTC()
 	var nextFrom = nextTo.Add(-1 * curDuration)
 
@@ -1398,11 +1431,10 @@ loop:
 
 		select {
 
-		// TODO: Algorithmus überarbeiten...
 		// Dynamische Anpassung des Zeitintervalls (zwischen 1s und 1min)
 		// Ziel: Anzahl d. gefetchten Events möglichst nah an FETCH_SIZE_EVENTS pro Zeitinterval
-		case fetchResult := <-chanEventFetchDone:
-			if fetchResult.Count == 0 {
+		case eventsFetched := <-chanEventFetchDone:
+			if eventsFetched == 0 {
 				curDuration += (curDuration / 100).Truncate(time.Millisecond) // Keine Events in Zeitraum --> Zeitspanne um 1% vergrößern
 				if curDuration > time.Minute {
 					curDuration = time.Minute
@@ -1444,6 +1476,7 @@ loop:
 
 	//debugLog.Printf("Stop reverse ticker")
 }
+*/
 
 /******************************************
 * UTILITY FUNCTIONS
