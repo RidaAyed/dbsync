@@ -573,8 +573,9 @@ func modeDatabaseUpdate(startDate string) {
 	go statisticAggregator()
 
 	chanEventFetcher <- TimeRange{
-		From: startDate,
-		To:   time.Now().UTC().Format("2006-01-02T15:04:05.999"),
+		From:       startDate,
+		To:         time.Now().UTC().Format("2006-01-02T15:04:05.999"),
+		SignalDone: true,
 	}
 
 	// 1. Wait until time range has been past
@@ -893,12 +894,13 @@ type TAPointerList struct {
 }
 
 type TimeRange struct {
-	From string
-	To   string
+	From       string
+	To         string
+	SignalDone bool // Signal that all events have been fetched
 }
 
 var chanEventFetcher = make(chan TimeRange)
-var chanEventFetchDone = make(chan int)             // Returns number of fetched events
+var chanEventFetchDone = make(chan int)             // Returns number of fetched events (if TimeRange.SignalDone==true)
 var eventCache = ttlcache.NewCache(2 * time.Minute) // (2 Minuten) Autoextend bei GET
 
 func eventFetcher(n int, wg *sync.WaitGroup) {
@@ -1012,7 +1014,7 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 					chanContactFetcher <- eventsByContactID
 				}
 
-				if timeRange.To != "" {
+				if timeRange.SignalDone {
 					chanEventFetchDone <- eventCountTotal
 				}
 				break
