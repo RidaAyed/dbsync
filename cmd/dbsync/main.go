@@ -315,7 +315,7 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 
 		// Configure connection pool
 		db.DB.SetMaxOpenConns(cntDBConn)
-		db.DB.SetMaxIdleConns(cntDBConn)
+		//db.DB.SetMaxIdleConns(cntDBConn) // Kann zu "packets.go:123: write tcp 127.0.0.1:60948->127.0.0.1:3306: write: broken pipe" error führen
 
 		// Schema aktualisieren
 		prepareDatabase()
@@ -927,11 +927,10 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 		}
 
 		var timeout = time.Second * 10 // Aktuelles timeout zwischen zwei Abfragen --> Langsam skalieren
-		var eventCount = 0
-		var eventCountTotal = 0
+		var newEventsCurPage = 0
+		var newEventsTotal = 0
 		var eventsByContactID = map[string]TAPointerList{}
 		for {
-
 			// Transaktionen laden
 			data, err := getTransactionEvents(params)
 			if err != nil {
@@ -964,8 +963,7 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				}
 
 				// Event counter erhöhen
-				eventCount++
-				eventCountTotal++
+				newEventsCurPage++
 
 				if !exists {
 					pointer += ",new" // new event
@@ -990,24 +988,28 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 					//debugLog.Printf("Event fetcher %v: %v transactions | %v contacts", n, eventCount, len(eventsByContactID))
 					chanContactFetcher <- eventsByContactID
 					eventsByContactID = make(map[string]TAPointerList)
-					eventCount = 0
 				}
 			}
 
 			if resp.Cursor != "" {
 				params["cursor"] = resp.Cursor
 
-				// Request throttling
-				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current: %v | (sleep %v)", n, eventCountTotal, params["from"], params["to"], fired, timeout)
-				time.Sleep(timeout)
-				if timeout > time.Second {
-					timeout -= timeout / 10 // 10 % verringern
+				// Request throttling (falls 75% neue Events)
+				if newEventsCurPage > FETCH_SIZE_EVENTS*.75 {
+					debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current: %v | (sleep %v)", n, newEventsTotal, params["from"], params["to"], fired, timeout)
+					time.Sleep(timeout)
+					if timeout > time.Second {
+						timeout -= timeout / 10 // 10 % verringern
+					} else {
+						timeout = time.Second
+					}
 				} else {
-					timeout = time.Second
+					debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v | current: %v", n, newEventsTotal, params["from"], params["to"], fired)
 				}
+
 			} else {
 
-				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v", n, eventCountTotal, params["from"], params["to"])
+				debugLog.Printf("Event fetcher %v: %v events | from: %v | to: %v", n, newEventsTotal, params["from"], params["to"])
 
 				// Letzter chunk
 				if len(eventsByContactID) > 0 {
@@ -1015,10 +1017,13 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				}
 
 				if timeRange.SignalDone {
-					chanEventFetchDone <- eventCountTotal
+					chanEventFetchDone <- newEventsTotal
 				}
 				break
 			}
+
+			newEventsTotal += newEventsCurPage
+			newEventsCurPage = 0
 		}
 	}
 
@@ -1353,15 +1358,28 @@ func databaseUpdater(n int, wg *sync.WaitGroup) {
 
 func upsertError(entity database.Entity, err error) {
 
-	switch entity.Type {
-	case "contact":
-		errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$id"], err.Error(), entity.Data)
-	case "transaction":
-		errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$contact_id"], err.Error(), entity.Data)
-	case "connection":
-		errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$transaction_id"], err.Error(), entity.Data)
-	case "recordings":
-		errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$connection_id"], err.Error(), entity.Data)
+	if DEBUG_MODE {
+		switch entity.Type {
+		case "contact":
+			errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$id"], err.Error(), entity.Data)
+		case "transaction":
+			errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$contact_id"], err.Error(), entity.Data)
+		case "connection":
+			errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$transaction_id"], err.Error(), entity.Data)
+		case "recordings":
+			errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$connection_id"], err.Error(), entity.Data)
+		}
+	} else {
+		switch entity.Type {
+		case "contact":
+			errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", (*entity.Data)["$id"], err.Error())
+		case "transaction":
+			errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", (*entity.Data)["$contact_id"], err.Error())
+		case "connection":
+			errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", (*entity.Data)["$transaction_id"], err.Error())
+		case "recordings":
+			errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", (*entity.Data)["$connection_id"], err.Error())
+		}
 	}
 }
 
