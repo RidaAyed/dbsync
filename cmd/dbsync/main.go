@@ -30,8 +30,8 @@ const (
 	FETCH_SIZE_EVENTS      = 1000  // Number of transaction events to fetch in one step
 	FETCH_SIZE_CONTACT_IDS = 1000  // Number of contact ids to fetch in one step
 	FETCH_SIZE_CONTACTS    = 30    // Number of contacts to fetch in one step
-	WORKER_COUNT           = 128   // Number of workers
-	MAX_DB_CONNECTIONS     = 32    // Number of simultaneous database connections
+	WORKER_COUNT           = 64    // Number of workers
+	MAX_DB_CONNECTIONS     = 16    // Number of simultaneous database connections
 	BASE_URL               = "https://api.dialfire.com"
 	//BASE_URL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
 )
@@ -1207,7 +1207,6 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 		}
 
 		//debugLog.Printf("Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
-
 		var contact = *pointerList.Contact
 		var taskLog = contact["$task_log"].([]interface{})
 
@@ -1225,9 +1224,20 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 				var tlIdx, _ = strconv.Atoi(splits[0])
 				var taIdx, _ = strconv.Atoi(splits[1])
 
+				if tlIdx > len(taskLog)-1 {
+					errorLog.Printf("Tasklog pointer out of range | Contact %v | Index %v\n", pointerList.ContactID, tlIdx)
+					continue
+				}
+
 				// Transaktion
 				var entry = taskLog[tlIdx].(map[string]interface{})
 				var transactions = entry["transactions"].([]interface{})
+
+				if taIdx > len(transactions)-1 {
+					errorLog.Printf("Transaction pointer out of range | Contact %v | Pointer %v\n", pointerList.ContactID, taIdx)
+					continue
+				}
+
 				var transaction = transactions[taIdx].(map[string]interface{})
 
 				var tid = contact["$id"].(string) + transaction["fired"].(string)
