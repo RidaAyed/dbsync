@@ -1,0 +1,71 @@
+.\" Manpage for dbsync.
+.\" Contact marko.seidenglanz@modima.de to correct errors or typos.
+.TH man 1 "05 Nov 2018" "1.0" "dbssync man page"
+.SH NAME
+.B dbsync
+\- Exports transactions on contacts in Dialfire to a database or a web service.
+.SH SYNOPSIS
+.B dbsync
+-a [EXEC_MODE] -c [CAMPAIGN_ID] -ct [CAMPAIGN_TOKEN] -url [DB_OR_WEBHOOK_URL]
+.SH DESCRIPTION
+.B dbsync
+can be used to export all transactions on contacts in Dialfire either to a database or to a web service.
+.LP
+The export is campaign based, therefore a valid access token for the specified campaign is required, which can be created in Dialfire.
+.LP
+Furthermore, a user-defined start date can be defined for the export.
+.SH OPTIONS
+.BL -tag -width 6n
+.TP
+.B
+-a
+Execution mode:
+    webhook ... Send all transactions to a webservice
+    db_init ... Initialize a databaqse with all transactions of the campaign, then stop
+    db_update ... Update a database with all transactions after specified start date (CLI arg 's'), then stop (default start date is one week ago)
+    db_sync ...  Update a database with all future transactions, optionally go back to a specified start date (CLI arg 's')
+.TP
+.B
+-c
+Campaign ID (required)
+.TP
+.B
+-ct
+Campaign API token (required)
+.TP
+.B
+-d
+Maximum number of simultaneous database connections (default 16)
+.TP
+.B
+-fm
+Transaction filter mode:
+    updates_only ... only transactions of type 'update'
+    hi_updates_only ... only transactions of type 'update' that were triggered by a human interaction
+.TP
+.B
+-fp
+Filter transactions by one or several task(-prefixes) (comma separated), e.g. 'fc_,qc_'
+.TP
+.B
+-p
+Enable profiling
+.TP
+.B
+-s
+Start date in the format '2006-01-02T15:04:05'
+.TP
+.B
+-url
+Connection URL:
+    URL pointing to a webservice that handles the transaction data (if a=webhook)
+    DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host:port/database' (if a=db_*)
+.TP
+.B
+-w
+Number of simultaneous workers (default 64)
+.SH BUGS
+Bugs are tracked in Bitbucket Issues:
+.B https://bitbucket.org/modima/dbsync/issues
+.SH AUTHOR
+Marko Seidenglanz (marko.seidenglanz@modima.de)

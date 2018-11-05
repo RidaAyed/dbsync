@@ -104,32 +104,32 @@ var tableSchemas = map[string][]map[string]string{
 
 var dbTypes = map[string]map[string]string{
 	"mysql": {
-		"string":      "varchar(255)",
-		"text":        "text",
-		"int":         "numeric",
-		"float64":     "numeric",
-		"json.Number": "numeric",
-		"bool":        "boolean",
+		"string":                  "varchar(255)",
+		"text":                    "text",
+		"int":                     "numeric",
+		"float64":                 "numeric",
+		"json.Number":             "numeric",
+		"bool":                    "boolean",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"postgres": {
-		"string":      "varchar(255)",
-		"text":        "text",
-		"int":         "numeric",
-		"float64":     "numeric",
-		"json.Number": "numeric",
-		"bool":        "boolean",
+		"string":                  "varchar(255)",
+		"text":                    "text",
+		"int":                     "numeric",
+		"float64":                 "numeric",
+		"json.Number":             "numeric",
+		"bool":                    "boolean",
 		"map[string]interface {}": "json",
 		"[]interface {}":          "json",
 	},
 	"sqlserver": {
-		"string":      "nvarchar(255)",
-		"text":        "text",
-		"int":         "numeric",
-		"float64":     "numeric",
-		"json.Number": "numeric",
-		"bool":        "bit",
+		"string":                  "nvarchar(255)",
+		"text":                    "text",
+		"int":                     "numeric",
+		"float64":                 "numeric",
+		"json.Number":             "numeric",
+		"bool":                    "bit",
 		"map[string]interface {}": "nvarchar(4000)", // Maximum is 4000
 		"[]interface {}":          "nvarchar(4000)", // Maximum is 4000
 	},
@@ -261,7 +261,7 @@ func (con *DBConnection) Upsert(entity Entity) error {
 	// Daten duplizieren (1. Insert / 2. Update)
 	values = append(values, values...)
 
-	// SQLServer benötigt zusätzliches $id Feld für Query
+	// SQLServer benÃ¶tigt zusÃ¤tzliches $id Feld fÃ¼r Query
 	if con.DBType == "sqlserver" {
 		values = append([]interface{}{(*entity.Data)["$id"]}, values...)
 	}
@@ -307,7 +307,7 @@ func filter(entity Entity) map[string]interface{} {
 
 			// Sanitize field name
 			//var cName = strings.ToLower(cName)            // most DMBS are case insensitive
-			//cName = strings.Replace(cName, "ß", "ss", -1) // SQLSERVER has problems with 'ß'
+			//cName = strings.Replace(cName, "ÃŸ", "ss", -1) // SQLSERVER has problems with 'ÃŸ'
 
 			if (*entity.Data)[cName] != nil {
 				filteredData[cName] = (*entity.Data)[cName]
@@ -349,8 +349,8 @@ func (con *DBConnection) UpdateTables(campaign Campaign) error {
 		"dropdown":     "string",
 		"autocomplete": "string",
 		"checkbox":     "bool",
-		"number":       "int", // TODO: Fließkomma unterstützen
-		"textarea":     "-",   // überspringen (nicht relevant)
+		"number":       "int", // TODO: FlieÃŸkomma unterstÃ¼tzen
+		"textarea":     "-",   // Ã¼berspringen (nicht relevant)
 		*/
 		// Abbildung auf datenbanktype
 		var dbType string
@@ -465,7 +465,7 @@ func (con *DBConnection) toDBString(value interface{}) string {
 
 	case string:
 		result = value.(string)
-		// Auf 255 Zeichen beschränken
+		// Auf 255 Zeichen beschrÃ¤nken
 		/*
 			if len(result) > 255 {
 				result = result[:255]
