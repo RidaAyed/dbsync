@@ -22,18 +22,21 @@ import (
 	"time"
 
 	"bitbucket.org/modima/dbsync/internal/pkg/database"
+	"github.com/buger/jsonparser"
 	"github.com/wunderlist/ttlcache"
 )
 
+//var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
 const (
-	DEBUG_MODE             = false // Verbose logging
-	FETCH_SIZE_EVENTS      = 1000  // Number of transaction events to fetch in one step
-	FETCH_SIZE_CONTACT_IDS = 1000  // Number of contact ids to fetch in one step
-	FETCH_SIZE_CONTACTS    = 30    // Number of contacts to fetch in one step
-	WORKER_COUNT           = 64    // Number of workers
-	MAX_DB_CONNECTIONS     = 16    // Number of simultaneous database connections
+	DEBUG_MODE             = true // Verbose logging
+	FETCH_SIZE_EVENTS      = 1000 // Number of transaction events to fetch in one step
+	FETCH_SIZE_CONTACT_IDS = 1000 // Number of contact ids to fetch in one step
+	FETCH_SIZE_CONTACTS    = 30   // Number of contacts to fetch in one step
+	WORKER_COUNT           = 64   // Number of workers
+	MAX_DB_CONNECTIONS     = 16   // Number of simultaneous database connections
 	BASE_URL               = "https://api.dialfire.com"
-	//BASE_URL               = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
+	//BASE_URL = "https://dev-xdot-pepperdial-xdot-com-dot-cloudstack5.appspot.com"
 )
 
 /******************************************
@@ -121,9 +124,9 @@ func (c *AppConfig) save() {
 	ioutil.WriteFile(c.Path, jsonData, 0644)
 }
 
-/*******************************************
-* teardown TASKS (ON KILL)
-********************************************/
+/****************************************
+* CLEANUP
+*****************************************/
 func teardown() {
 
 	// Save configuration
@@ -181,7 +184,7 @@ hi_updates_only ... only transactions of type 'update' that were triggered by a 
 	tPrefix := flag.String("fp", "", "Filter transactions by one or several task(-prefixes) (comma separated), e.g. 'fc_,qc_'")
 	URL := flag.String("url", "", `URL pointing to a webservice that handles the transaction data (if a=webhook)
 DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host:port/database' (if a=db_*)`)
-	doProfiling := flag.Bool("p", false, `Enable profiling`)
+	httpPort := flag.String("p", "", `HTTP profiling hook server port`)
 
 	flag.Parse()
 
@@ -254,8 +257,9 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 	}()
 
 	// Start profiler
-	if *doProfiling {
-		go http.ListenAndServe(":8080", http.DefaultServeMux)
+	if *httpPort != "" {
+		go http.ListenAndServe("127.0.0.1:"+*httpPort, http.DefaultServeMux)
+		//go profiler()
 	}
 
 	// Set start date from config file (iff not explicitly defined)
@@ -339,6 +343,21 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 	}
 }
 
+/*******************************************
+* MEMORY PROFILING
+********************************************/
+/*
+func profiler() {
+	memprof, err := os.Create("mem.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	pprof.WriteHeapProfile(memprof)
+	memprof.Close()
+	time.Sleep(120 * time.Second)
+}
+*/
+
 func prepareDatabase() {
 
 	// Kampagne laden
@@ -391,6 +410,32 @@ func modeWebhook(url string, startDate string) {
 	ticker()
 }
 
+func getJSON(data []byte, keys ...string) []byte {
+
+	value, dataType, _, err := jsonparser.Get(data, keys...)
+	if dataType == jsonparser.NotExist {
+		return nil
+	}
+
+	if err != nil {
+		errorLog.Printf("data: %s | keys: %v | error: %v\n", data, keys, err.Error())
+		return nil
+	}
+
+	return value
+}
+
+func setJSON(data []byte, value []byte, keys ...string) []byte {
+
+	value, err := jsonparser.Set(data, value, keys...)
+	if err != nil {
+		errorLog.Printf("data: %s | keys: %v | error: %v\n", data, keys, err.Error())
+		return nil
+	}
+
+	return value
+}
+
 func webhookSender(n int, url string, wg *sync.WaitGroup) {
 
 	//debugLog.Printf("Start webhook sender %v", n)
@@ -407,48 +452,47 @@ func webhookSender(n int, url string, wg *sync.WaitGroup) {
 		//debugLog.Printf("Send transactions contact: %v | pointer: %v", taPointer.ContactID, taPointer.Pointer)
 
 		// Kontakt
-		var contact = *taPointer.Contact
-		var taskLog = contact["$task_log"].([]interface{})
-		delete(contact, "$task_log")
+		var contact = taPointer.Contact
+		var taskLog = getJSON(contact, "$task_log")
+		contact = jsonparser.Delete(contact, "$task_log")
 
 		// Transaktion
 		for _, p := range taPointer.Pointer {
 
 			var splits = strings.Split(p, ",")
-			var tlIdx, _ = strconv.Atoi(splits[0])
-			var taIdx, _ = strconv.Atoi(splits[1])
+			var tlIdx = splits[0]
+			var taIdx = splits[1]
 			var state = splits[2] // new or updated
 
-			var entry = taskLog[tlIdx].(map[string]interface{})
-			var transactions = entry["transactions"].([]interface{})
-			var transaction = transactions[taIdx]
+			var entry = getJSON(taskLog, "["+tlIdx+"]")
+			var transactions = getJSON(entry, "transactions")
+			var transaction = getJSON(transactions, "["+taIdx+"]")
 
-			var data = map[string]interface{}{
-				`contact`:     contact,
-				`transaction`: transaction,
-				`state`:       state,
-			}
-
-			//debugLog.Printf("Send transaction contact: %v | pointer: %v", taPointer.ContactID, p)
-
-			payload, err := json.Marshal(data)
-			if err != nil {
-				errorLog.Printf("%v\n", err.Error())
-				continue
-			}
+			var b bytes.Buffer
+			b.WriteString("{")
+			b.WriteString("\"contact\":")
+			b.Write(contact)
+			b.WriteString(",\"transaction\":")
+			b.Write(transaction)
+			b.WriteString(",\"state\":")
+			b.WriteString("\"" + state + "\"")
+			b.WriteString("}")
 
 			// TESTING
-			/*
-				var re = regexp.MustCompile(`\W`)
-				s := re.ReplaceAllString(transaction.(map[string]interface{})["fired"].(string), ``)
-				var url = url + "/" + taPointer.ContactID + "_" + s
-				// TESTING END
-			*/
+			//var re = regexp.MustCompile(`\W`)
+			//s := re.ReplaceAllString(transaction.(map[string]interface{})["fired"].(string), ``)
+			var url = url + "/" + taPointer.ContactID // + "_" + s
+			// TESTING END
 
-			err = callWebservice(url, payload)
+			err := callWebservice(url, b.Bytes())
 			if err == nil {
 				// Save start date if transaction was sent successfully
-				config.Timestamp = transaction.(map[string]interface{})["fired"].(string)
+				fired, err := jsonparser.GetString(transaction, "fired")
+				if err != nil {
+					errorLog.Printf("%v\n", err.Error())
+					continue
+				}
+				config.Timestamp = fired
 			} else {
 				errorLog.Printf("%v\n", err.Error())
 			}
@@ -889,7 +933,7 @@ type FetchResult struct {
 
 type TAPointerList struct {
 	ContactID string
-	Contact   *map[string]interface{}
+	Contact   []byte
 	Pointer   []string
 }
 
@@ -1157,36 +1201,53 @@ func contactFetcher(n int, wg *sync.WaitGroup) {
 			break
 		}
 
-		dec := json.NewDecoder(bytes.NewReader(data))
-		dec.UseNumber()
-		// read "["
-		_, err = dec.Token()
-		if err != nil {
-			log.Fatal(err)
-		}
+		jsonparser.ArrayEach(data, func(contact []byte, dataType jsonparser.ValueType, offset int, err error) {
 
-		// while the array contains contacts
-		for dec.More() {
-
-			// decode one contact
-			var contact map[string]interface{}
-			err := dec.Decode(&contact)
+			cid, err := jsonparser.GetString(contact, "$id")
 			if err != nil {
-				log.Fatal(err)
+				errorLog.Printf("%v\n", err.Error())
+				return
 			}
 
 			// send to splitter
-			var taPointer = eventsByContactID[contact["$id"].(string)]
+			var taPointer = eventsByContactID[cid]
 			//taPointer.ContactData = data
-			taPointer.Contact = &contact
+			taPointer.Contact = contact
 			chanDataSplitter <- taPointer
-		}
+		})
 
-		// read "]"
-		_, err = dec.Token()
-		if err != nil {
-			log.Fatal(err)
-		}
+		/*
+			dec := json.NewDecoder(bytes.NewReader(data))
+			dec.UseNumber()
+			// read "["
+			_, err = dec.Token()
+			if err != nil {
+				errorLog.Printf("%v\n", err.Error())(err)
+			}
+
+			// while the array contains contacts
+			for dec.More() {
+
+				// decode one contact
+				var contact map[string]interface{}
+				err := dec.Decode(&contact)
+				if err != nil {
+					errorLog.Printf("%v\n", err.Error())(err)
+				}
+
+				// send to splitter
+				var taPointer = eventsByContactID[contact["$id"].(string)]
+				//taPointer.ContactData = data
+				taPointer.Contact = &contact
+				chanDataSplitter <- taPointer
+			}
+
+			// read "]"
+			_, err = dec.Token()
+			if err != nil {
+				errorLog.Printf("%v\n", err.Error())(err)
+			}
+		*/
 	}
 	//debugLog.Printf("Stop contact fechter %v", n)
 }
@@ -1207,12 +1268,13 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 		}
 
 		//debugLog.Printf("Splitter %v: Extract %v transactions", n, len(pointerList.Pointer))
-		var contact = *pointerList.Contact
-		var taskLog = contact["$task_log"].([]interface{})
+		var contact = pointerList.Contact
+		var taskLog = getJSON(contact, "$task_log")
+		contact = jsonparser.Delete(contact, "$task_log")
 
 		chanDatabaseUpdater <- database.Entity{
 			Type: "contact",
-			Data: &contact, // Alle überflüssigen Felder entfernen
+			Data: contact, // Alle überflüssigen Felder entfernen
 		}
 
 		if pointerList.Pointer != nil {
@@ -1221,106 +1283,134 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 			for _, p := range pointerList.Pointer {
 
 				var splits = strings.Split(p, ",")
-				var tlIdx, _ = strconv.Atoi(splits[0])
-				var taIdx, _ = strconv.Atoi(splits[1])
+				var tlIdx = splits[0]
+				var taIdx = splits[1]
 
-				if tlIdx > len(taskLog)-1 {
-					errorLog.Printf("Tasklog pointer out of range | Contact %v | Index %v\n", pointerList.ContactID, tlIdx)
-					continue
-				}
+				/*
+					if tlIdx > len(taskLog)-1 {
+						errorLog.Printf("Tasklog pointer out of range | Contact %v | Index %v\n", pointerList.ContactID, tlIdx)
+						continue
+					}
+				*/
 
 				// Transaktion
-				var entry = taskLog[tlIdx].(map[string]interface{})
-				var transactions = entry["transactions"].([]interface{})
+				var entry = getJSON(taskLog, "["+tlIdx+"]")
+				var transactions = getJSON(entry, "transactions")
+				var transaction = getJSON(transactions, "["+taIdx+"]")
 
-				if taIdx > len(transactions)-1 {
-					errorLog.Printf("Transaction pointer out of range | Contact %v | Pointer %v\n", pointerList.ContactID, taIdx)
+				/*
+					if taIdx > len(transactions)-1 {
+						errorLog.Printf("Transaction pointer out of range | Contact %v | Pointer %v\n", pointerList.ContactID, taIdx)
+						continue
+					}
+				*/
+
+				cid, err := jsonparser.GetString(contact, "$id")
+				if err != nil {
+					errorLog.Printf("%v\n", err.Error())
 					continue
 				}
 
-				var transaction = transactions[taIdx].(map[string]interface{})
-
-				var tid = contact["$id"].(string) + transaction["fired"].(string)
-				if transaction["sequence_nr"] != nil {
-					tid += transaction["sequence_nr"].(json.Number).String()
-				}
-				transaction["$id"] = hash(tid)
-				transaction["$contact_id"] = contact["$id"].(string)
-
-				insertTransaction(transaction)
+				insertTransaction(transaction, cid)
 			}
 		} else {
 
 			// Kein Pointer --> Alle Transaktionen importieren
-			for _, e := range taskLog {
+			jsonparser.ArrayEach(taskLog, func(entry []byte, dataType jsonparser.ValueType, offset int, err error) {
 
-				// Transaktion
-				var entry = e.(map[string]interface{})
-				var transactions = entry["transactions"].([]interface{})
-				for _, tran := range transactions {
+				var transactions = getJSON(entry, "transactions")
 
-					var transaction = tran.(map[string]interface{})
+				jsonparser.ArrayEach(transactions, func(transaction []byte, dataType jsonparser.ValueType, offset int, err error) {
 
-					var tid = contact["$id"].(string) + transaction["fired"].(string)
-					if transaction["sequence_nr"] != nil {
-						tid += transaction["sequence_nr"].(json.Number).String()
+					cid, err := jsonparser.GetString(contact, "$id")
+					if err != nil {
+						errorLog.Printf("%v\n", err.Error())
+						return
 					}
-					transaction["$id"] = hash(tid)
-					transaction["$contact_id"] = contact["$id"].(string)
 
-					insertTransaction(transaction)
-				}
-			}
+					insertTransaction(transaction, cid)
+				})
+			})
 		}
 	}
 
 	//debugLog.Printf("Stop database updater %v", n)
 }
 
-func insertTransaction(transaction map[string]interface{}) {
+func insertTransaction(transaction []byte, cid string) {
+
+	fired, err := jsonparser.GetString(transaction, "fired")
+	if err != nil {
+		errorLog.Printf("data %s | key %v | error %v\n", transaction, "fired", err.Error())
+		return
+	}
+
+	seqnr, err := jsonparser.GetInt(transaction, "sequence_nr")
+	if err != nil {
+		errorLog.Printf("data %s | key %v | error %v\n", transaction, "sequence_nr", err.Error())
+		return
+	}
+
+	var tid = hash(cid + fired + strconv.Itoa(int(seqnr)))
+	transaction = setJSON(transaction, []byte(`"`+tid+`"`), "$id")
+	transaction = setJSON(transaction, []byte(`"`+cid+`"`), "$contact_id")
 
 	// Connections
-	var connections = transaction["connections"]
-	delete(transaction, "connections")
+	var connections = getJSON(transaction, "connections")
+	transaction = jsonparser.Delete(transaction, "connections")
+
 	chanDatabaseUpdater <- database.Entity{
 		Type: "transaction",
-		Data: &transaction,
+		Data: transaction,
 	}
 
 	if connections == nil {
 		return
 	}
 
-	for _, con := range connections.([]interface{}) {
+	jsonparser.ArrayEach(connections, func(connection []byte, dataType jsonparser.ValueType, offset int, err error) {
 
-		var connection = con.(map[string]interface{})
-		connection["$id"] = hash(transaction["$id"].(string) + connection["fired"].(string))
-		connection["$transaction_id"] = transaction["$id"]
+		fired, err := jsonparser.GetString(connection, "fired")
+		if err != nil {
+			errorLog.Printf("%v\n", err.Error())
+			return
+		}
+
+		var conid = hash(tid + fired)
+		connection = setJSON(connection, []byte(`"`+conid+`"`), "$id")
+		connection = setJSON(connection, []byte(`"`+tid+`"`), "$transaction_id")
 
 		// Recordings
-		var recordings = connection["recordings"]
-		delete(connection, "recordings")
+		var recordings = getJSON(connection, "recordings")
+		connection = jsonparser.Delete(connection, "recordings")
+
 		chanDatabaseUpdater <- database.Entity{
 			Type: "connection",
-			Data: &connection,
+			Data: connection,
 		}
 
 		if recordings == nil {
-			continue
+			return
 		}
 
-		for _, rec := range recordings.([]interface{}) {
+		jsonparser.ArrayEach(recordings, func(recording []byte, dataType jsonparser.ValueType, offset int, err error) {
 
-			var recording = rec.(map[string]interface{})
-			recording["$id"] = hash(connection["$id"].(string) + recording["location"].(string))
-			recording["$connection_id"] = connection["$id"]
+			location, err := jsonparser.GetString(recording, "location")
+			if err != nil {
+				errorLog.Printf("%v\n", err.Error())
+				return
+			}
+
+			var recid = hash(conid + location)
+			recording = setJSON(recording, []byte(`"`+recid+`"`), "$id")
+			recording = setJSON(recording, []byte(`"`+conid+`"`), "$connection_id")
 
 			chanDatabaseUpdater <- database.Entity{
 				Type: "recording",
-				Data: &recording,
+				Data: recording,
 			}
-		}
-	}
+		})
+	})
 }
 
 var chanDatabaseUpdater = make(chan database.Entity)
@@ -1345,8 +1435,12 @@ func databaseUpdater(n int, wg *sync.WaitGroup) {
 		if err == nil {
 			// Save start date if transaction was stored successfully
 			if entity.Type == "transaction" {
-				//debugLog.Printf("Update ts: %v", entity.Data["fired"].(string))
-				config.Timestamp = (*entity.Data)["fired"].(string)
+				fired, err := jsonparser.GetString(entity.Data, "fired")
+				if err != nil {
+					errorLog.Printf("%v\n", err.Error())
+					continue
+				}
+				config.Timestamp = fired
 			}
 			counter[entity.Type+" success"]++
 		} else {
@@ -1368,27 +1462,33 @@ func databaseUpdater(n int, wg *sync.WaitGroup) {
 
 func upsertError(entity database.Entity, err error) {
 
+	id, err2 := jsonparser.GetString(entity.Data, "$id")
+	if err2 != nil {
+		errorLog.Printf("%v\n", err2.Error())
+		return
+	}
+
 	if DEBUG_MODE {
 		switch entity.Type {
 		case "contact":
-			errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$id"], err.Error(), entity.Data)
+			errorLog.Printf("UPSERT ERROR: Contact ID: %v | %v\nDATA: %s\n\n", id, err.Error(), entity.Data)
 		case "transaction":
-			errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$contact_id"], err.Error(), entity.Data)
+			errorLog.Printf("UPSERT ERROR: Transaction ID: %v | %v\nDATA: %s\n\n", id, err.Error(), entity.Data)
 		case "connection":
-			errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$transaction_id"], err.Error(), entity.Data)
+			errorLog.Printf("UPSERT ERROR: Connection ID: %v | %v\nDATA: %s\n\n", id, err.Error(), entity.Data)
 		case "recordings":
-			errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\nDATA: %v\n\n", (*entity.Data)["$connection_id"], err.Error(), entity.Data)
+			errorLog.Printf("UPSERT ERROR: Recording ID: %v | %v\nDATA: %s\n\n", id, err.Error(), entity.Data)
 		}
 	} else {
 		switch entity.Type {
 		case "contact":
-			errorLog.Printf("UPSERT ERROR: Contact | CONTACT ID: %v | %v\n\n", (*entity.Data)["$id"], err.Error())
+			errorLog.Printf("UPSERT ERROR: Contact ID: %v | %v\n\n", id, err.Error())
 		case "transaction":
-			errorLog.Printf("UPSERT ERROR: Transaction | CONTACT ID: %v | %v\n\n", (*entity.Data)["$contact_id"], err.Error())
+			errorLog.Printf("UPSERT ERROR: Transaction ID: %v | %v\n\n", id, err.Error())
 		case "connection":
-			errorLog.Printf("UPSERT ERROR: Connection | TRANSACTION ID: %v | %v\n\n", (*entity.Data)["$transaction_id"], err.Error())
+			errorLog.Printf("UPSERT ERROR: Connection ID: %v | %v\n\n", id, err.Error())
 		case "recordings":
-			errorLog.Printf("UPSERT ERROR: Recording | CONNECTION ID: %v | %v\n\n", (*entity.Data)["$connection_id"], err.Error())
+			errorLog.Printf("UPSERT ERROR: Recording ID: %v | %v\n\n", id, err.Error())
 		}
 	}
 }
