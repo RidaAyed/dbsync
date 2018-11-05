@@ -1,9 +1,0 @@
-Package: dbsync
-Version: 1.0.0-0
-Section: misc
-Priority: optional
-Architecture: amd64
-Installed-Size: 11430
-Maintainer: Marko Seidenglanz <marko.seidenglanz@modima.de>
-Homepage: https://bitbucket.org/modima/dbsync/
-Description: This tool can be used to export all transactions on contacts in Dialfire either to a database or to a web service.
