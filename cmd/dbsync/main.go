@@ -20,9 +20,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"ttlcache"
 
 	"bitbucket.org/modima/dbsync/internal/pkg/database"
+	"github.com/wunderlist/ttlcache"
 )
 
 const (
