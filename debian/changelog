@@ -1,8 +1,0 @@
-dbsync (0.0~git20181106.ef3aa9d-1) bionic; urgency=medium
-
-  * Initial release (Closes: #1)
-
-  * Minor fixes
-	- Some minor bugfixes
-
- -- Marko Seidenglanz <marko.seidenglanz@gmail.com>  Tue, 06 Nov 2018 12:48:10 +0100
