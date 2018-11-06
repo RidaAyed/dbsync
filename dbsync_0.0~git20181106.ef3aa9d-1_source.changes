@@ -1,0 +1,50 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Format: 1.8
+Date: Tue, 06 Nov 2018 12:48:10 +0100
+Source: dbsync
+Binary: dbsync
+Architecture: source
+Version: 0.0~git20181106.ef3aa9d-1
+Distribution: bionic
+Urgency: medium
+Maintainer: Debian Go Packaging Team <pkg-go-maintainers@lists.alioth.debian.org>
+Changed-By: Marko Seidenglanz <marko.seidenglanz@gmail.com>
+Description:
+ dbsync     - This tool can be used to export all transactions on contacts in D
+Closes: 1
+Changes:
+ dbsync (0.0~git20181106.ef3aa9d-1) bionic; urgency=medium
+ .
+   * Initial release (Closes: #1)
+Checksums-Sha1:
+ 08b83e1249ea0c85f67ecac9111d0d7f150fa475 2106 dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ 2a273db889e5c3ed1891368a8ec17a6ab2e83832 13708 dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ e5589ef5a56556b1bc0a9451ed8b20ec02bb90cb 1168 dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ 0c5595fd7666683cb704fb16f0f7509893d2e104 14774 dbsync_0.0~git20181106.ef3aa9d-1_source.buildinfo
+Checksums-Sha256:
+ ea36ef838fc8100a910eb5591b8060edef6818ba1642564053fb71b78bbffaa9 2106 dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ f42e1dea80c5d2a01ccfcfe1cb6b89f93f8bc90520cb82318e57d9b98ef7912b 13708 dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ 60d64d8844cc1fa6e5f330e9fe5c87cb4c221d040dd3591e58d2b367fd370871 1168 dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ 38e76912471006232dd7df7c73422f8def4c513d572282378519a0de153f8a61 14774 dbsync_0.0~git20181106.ef3aa9d-1_source.buildinfo
+Files:
+ eafd4fe646b347b429d3d225148756e3 2106 devel optional dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ f19386bcec31197bbf5810e6e68ff65b 13708 devel optional dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ 6ffd97e49b8f88145b1bd595573fe08d 1168 devel optional dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ 70bb124c9baba2c47662de044af6f8c8 14774 devel optional dbsync_0.0~git20181106.ef3aa9d-1_source.buildinfo
+
+-----BEGIN PGP SIGNATURE-----
+
+iQHQBAEBCgA6FiEE826RccNOctsRHT1CqiWJuPWoo9gFAlvhoc8cHG1hcmtvLnNl
+aWRlbmdsYW56QGdtYWlsLmNvbQAKCRCqJYm49aij2BOnC/0YoJv/j6eAC5+wjTCH
+QcDyvS4EEY0zxEIZQc7yipSm8cjvpF3xmfWsz9gRl0DJoF6JRQCgrildPMbUZw7O
+jfdWcZI1KvTI/K8QpbCQjx4hrnIyJaIxvv+d3u7OXL0T93pXXsvuNh9VVHoaC+OE
+kFglGuH7Pq1FmB8g/9mpuOkl54EflbM4igxOzG4oqBPq0gzKr1e5JWTq7wo/YmgR
+jG7V9mY389vhuM//0zvDuX+dv+IN99lJIL+cVeAii4+GImtoEDqPtGaRKp92IyN0
+gz/ge3mzvpauIei1xO8b4dZsYSJEZXPzYOv8w0wHBISSTCAeYDWtKpDqqvrlEM8Z
+O5O3CMZ/CGjDltLSMUNmBaZPcUpuwdBkwOmBjaedpfKBzVqKqqCrgJgjpJAF1Dn3
+BCoIxS1JyxLiGEnJVWvSxyMliv50YntE6uLg42zuL1owaB0+9NA7+Xi300xDip+H
+eOadxWUEsnnLhWYCC8RIZaMw6wpb182zDWDw8EUokbohpAE=
+=pUG8
+-----END PGP SIGNATURE-----

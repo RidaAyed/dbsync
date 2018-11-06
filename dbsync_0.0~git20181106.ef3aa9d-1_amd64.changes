@@ -1,0 +1,53 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Format: 1.8
+Date: Tue, 06 Nov 2018 12:48:10 +0100
+Source: dbsync
+Binary: dbsync
+Architecture: source amd64
+Version: 0.0~git20181106.ef3aa9d-1
+Distribution: bionic
+Urgency: medium
+Maintainer: Debian Go Packaging Team <pkg-go-maintainers@lists.alioth.debian.org>
+Changed-By: Marko Seidenglanz <marko.seidenglanz@modima.de>
+Description:
+ dbsync     - TODO: short description
+Closes: 1
+Changes:
+ dbsync (0.0~git20181106.ef3aa9d-1) bionic; urgency=medium
+ .
+   * Initial release (Closes: #1)
+Checksums-Sha1:
+ 91a8bbd14b9638264cdf2de8139d6fb87f31538d 2000 dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ 2a273db889e5c3ed1891368a8ec17a6ab2e83832 13708 dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ f6628a271c4729b8e6a67ae1109cdaff35fff1e0 1104 dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ da8a255523ed5e562eaa94756b0675ebda24bef7 6585 dbsync_0.0~git20181106.ef3aa9d-1_amd64.buildinfo
+ 893d4088b1c668e0ee6b27efad6d08c8a1cc95b7 2103172 dbsync_0.0~git20181106.ef3aa9d-1_amd64.deb
+Checksums-Sha256:
+ 6e6f616e78a9db35bc859f5cf9ef0b04d4d59c1e6f04e007df6d5792c0963e0e 2000 dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ f42e1dea80c5d2a01ccfcfe1cb6b89f93f8bc90520cb82318e57d9b98ef7912b 13708 dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ 1353ab3fe49c11b9bd73b848882cffaed8959e011b3e48e754efae657ec1d8f0 1104 dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ 57c5c60f655528d066a46e624b650bd39df92b02c6338cd79c32349ca5332a59 6585 dbsync_0.0~git20181106.ef3aa9d-1_amd64.buildinfo
+ 2b66f5ad9ddaccab32841c5fb2a940e01fdbfc682aaeda34adf75fb2d2c37f28 2103172 dbsync_0.0~git20181106.ef3aa9d-1_amd64.deb
+Files:
+ 16630d6bc9eff104797566121cebd76f 2000 devel optional dbsync_0.0~git20181106.ef3aa9d-1.dsc
+ f19386bcec31197bbf5810e6e68ff65b 13708 devel optional dbsync_0.0~git20181106.ef3aa9d.orig.tar.xz
+ a6ffbb807afc41f5bd97cc7b733682e7 1104 devel optional dbsync_0.0~git20181106.ef3aa9d-1.debian.tar.xz
+ 3816f2873de8c71ea5b20dfee4d060f7 6585 devel optional dbsync_0.0~git20181106.ef3aa9d-1_amd64.buildinfo
+ e358474e5bea637a988ffe1988ad73df 2103172 devel optional dbsync_0.0~git20181106.ef3aa9d-1_amd64.deb
+
+-----BEGIN PGP SIGNATURE-----
+
+iQGzBAEBCgAdFiEE826RccNOctsRHT1CqiWJuPWoo9gFAlvhmuMACgkQqiWJuPWo
+o9hPbAv+LnZv3SJaQ+xNBf9r66Dv1gIeJnNLEb06S01INC9kVTTneFRvZHg0HNel
+aDRMIZt0yFBQz/rJrM1jWasbxMKSVy54hl5GgphsI6Ku3OzHWtnQRcTGkYKSW1ro
+6mNos9HkDPRcxY/qWnhdXfDFfVUv9eGJSQTweh1JGxPDvIzBImWd8BN8FHtcq18w
+FJNYhsVm9Eo4Qtlmw8awZSj06/QJktvN7Ol/PCOcqtpMeGUUKJKiJO+qvv/kgx3U
+0DOjCa5EwVsqpitX0J0lnhhB2/gFCR1pYoSjtHcD8Mj0Wj3WU/IzhlLSS7mF8udq
+Ji36bhClJgGZ1H7VV7aJiBQFpZyMPqAGyna0R+dge+5tWr0AeV3EZShBiinvqbFS
+IRzfoDgZ5c57MrDxU/ETZuH3v2nHhrijKbOlGRoXaNkR1IV5mMfl1Wl1Wc6Q7PHy
++pUFiJLyCujYegz4TXMSrhNd2WOeeq7qpzDLjd0df8vuQeV9fVgchN/j836LupFx
+bDcjTD0g
+=30K7
+-----END PGP SIGNATURE-----
