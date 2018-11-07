@@ -1,6 +1,5 @@
-dbsync (0.0.1) bionic; urgency=medium
+dbsync (1.0.1) bionic; urgency=medium
 
   * Initial release
-  * Second release
 
- -- Marko Seidenglanz <marko.seidenglanz@gmail.com>  Tue, 06 Nov 2018 16:56:54 +0100
+ -- Marko Seidenglanz <marko.seidenglanz@gmail.com>  Tue, 07 Nov 2018 16:56:54 +0100

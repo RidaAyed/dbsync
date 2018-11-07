@@ -21,5 +21,4 @@ Architecture: any
 Built-Using: ${misc:Built-Using}
 Depends: ${shlibs:Depends},
          ${misc:Depends}
-Description: This tool can be used to export all transactions on contacts in Dialfire either to a database or to a web service.
- 
+Description: This tool can be used to export all transactions on contacts either to a database or to a web service.
