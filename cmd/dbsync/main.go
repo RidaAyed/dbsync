@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"bitbucket.org/modima/dbsync/internal/pkg/database"
-	"github.com/wunderlist/ttlcache"
+	"bitbucket.org/modima/dbsync/ttlcache"
 )
 
 const (

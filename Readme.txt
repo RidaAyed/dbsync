@@ -1,30 +1,30 @@
 Build Package
 ---------------------------------------------
+0. Versionstag für aktuelle Version erstellen
 
-1. Ins Verzeichnis build wechseln
+ - https://bitbucket.org/modima/dbsync/commits/
+ - Create tag (rechts)
 
- $ cd build
+1. Build Verzeichnis anlegen
 
-2. Aktuelle Version auschecken
+ $ mkdir build && cd build
 
- $ dh-make-golang bitbucket.org/modima/dbsync
+2. Aktuelle Version aus Repository laden
 
-3. Changelog aktualisieren
+ $ dh-make-golang bitbucket.org/modima/dbsync 
+
+3. Debian Verzeichnis kopieren (da es in Schritt 2 neu erzeugt wurde)
+
+ $ cp -r ../debian/ dbsync/
+
+4. Changelog aktualisieren (Version muss orig.tar.gz entsprechen)
 
  $ nano dbsync/debian/changelog
 
+5. Debian SOURCE Paket bauen (Option -S unbedingt verwenden, sonst wird es später von launchpad nicht akzeptiert)
 
+ $ cd dbsync && debuild -S
 
+6. Paket ins PPA laden
 
-1. Changelog erweitern / Was wurde geändert
-
- $ nano debian/changelog
-
-
-2. Änderungen einchecken
-
- $ git add * && git commit -a -m "..."
- $ git push origin master
-
-
-3. 
+ $ dput ppa:dialfire/ppa ../*.changes
