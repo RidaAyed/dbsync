@@ -1,35 +1,39 @@
 Build Package
 ---------------------------------------------
-0. Tag für aktuelle Version erstellen
+1. Build Verzeichnis löschen
 
- $ git tag 1.0.1 && git push origin 1.0.1
+    $ rm -rf build
 
-1. Eventuell Build-Verzeichnis anlegen
+2. Tag für aktuelle Version erstellen
 
- $ mkdir build && cd build
+    $ git tag 1.0.1 && git push origin 1.0.1
 
-2. Aktuelle Version aus Repository laden
+3. Build-Verzeichnis anlegen
 
- $ dh-make-golang bitbucket.org/modima/dbsync 
+    $ mkdir build && cd build
 
-3. Debian Verzeichnis kopieren (da es in Schritt 2 neu erzeugt wurde)
+4. Aktuelle Version aus Repository laden
 
- $ cp -r ../debian/ dbsync/
+    $ dh-make-golang bitbucket.org/modima/dbsync 
 
-4. Changelog aktualisieren (Version muss orig.tar.gz entsprechen)
+5. Debian Verzeichnis kopieren (da es in Schritt 2 neu erzeugt wurde)
 
- $ nano dbsync/debian/changelog
+    $ cp -r ../debian/ dbsync/
 
-5. Changelog zurückkopieren
+6. Changelog aktualisieren (Version muss orig.tar.gz entsprechen)
 
- $ cp -r dbsync/debian/ ../
+    $ nano dbsync/debian/changelog
 
-6. Debian SOURCE Paket bauen (Option -S unbedingt verwenden, sonst wird es später von launchpad nicht akzeptiert)
+7. Changelog zurückkopieren
 
- $ cd dbsync && debuild -S
+    $ cp -r dbsync/debian/ ../
 
-7. Paket ins PPA laden
+8. Debian SOURCE Paket bauen (Option -S unbedingt verwenden, sonst wird es später von launchpad nicht akzeptiert)
 
- $ dput ppa:cloud-it/ppa ../*.changes
+    $ cd dbsync && debuild -S
 
-8, Upload und Build Status prüfen auf https://launchpad.net/~cloud-it/+archive/ubuntu/ppa
+9. Paket ins PPA laden
+
+    $ dput ppa:cloud-it/ppa ../*.changes
+
+10. Upload und Build Status prüfen auf https://launchpad.net/~cloud-it/+archive/ubuntu/ppa

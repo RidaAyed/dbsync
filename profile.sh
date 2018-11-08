@@ -1,6 +1,5 @@
 #!/bin/bash
 HOST=localhost
-#HOST=35.224.19.255
 PROFILE_DIR=profiles
 mkdir -p $PROFILE_DIR
 
