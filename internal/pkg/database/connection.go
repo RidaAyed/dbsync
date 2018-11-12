@@ -336,7 +336,7 @@ func (con *DBConnection) UpdateTables(campaign Campaign) error {
 	var count = 0
 	for _, element := range campaign.Form.Elements {
 
-		if element.Type != "field" || element.Deleted == true || element.State == "hidden" {
+		if element.Type != "field" || element.Deleted == true {
 			continue
 		}
 
