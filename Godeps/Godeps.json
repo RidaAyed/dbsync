@@ -1,0 +1,48 @@
+{
+	"ImportPath": "bitbucket.org/modima/dbsync/cmd/dbsync",
+	"GoVersion": "go1.10",
+	"GodepVersion": "v80",
+	"Deps": [
+		{
+			"ImportPath": "bitbucket.org/modima/dbsync/internal/dbsync",
+			"Comment": "1.0.3-1-g434ab8b",
+			"Rev": "434ab8b50a95263e89ee784d270eed107fba8f87"
+		},
+		{
+			"ImportPath": "bitbucket.org/modima/dbsync/ttlcache",
+			"Rev": "7dbceb0d509466e07d5d066ea0859f1d8fc8f2fd"
+		},
+		{
+			"ImportPath": "cloud.google.com/go/civil",
+			"Comment": "v0.28.0",
+			"Rev": "97efc2c9ffd9fe8ef47f7f3203dc60bbca547374"
+		},
+		{
+			"ImportPath": "github.com/denisenkom/go-mssqldb",
+			"Rev": "4e0d7dc8888fbb59764060e99b7b68e77a6f9698"
+		},
+		{
+			"ImportPath": "github.com/denisenkom/go-mssqldb/internal/cp",
+			"Rev": "4e0d7dc8888fbb59764060e99b7b68e77a6f9698"
+		},
+		{
+			"ImportPath": "github.com/go-sql-driver/mysql",
+			"Comment": "v1.4.0-13-g6be42e0",
+			"Rev": "6be42e0ff99645d7d9626d779001a46e39c5f280"
+		},
+		{
+			"ImportPath": "github.com/lib/pq",
+			"Comment": "v1.0.0-6-g9eb73ef",
+			"Rev": "9eb73efc1fcc404148b56765b0d3f61d9a5ef8ee"
+		},
+		{
+			"ImportPath": "github.com/lib/pq/oid",
+			"Comment": "v1.0.0-6-g9eb73ef",
+			"Rev": "9eb73efc1fcc404148b56765b0d3f61d9a5ef8ee"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/md4",
+			"Rev": "4d3f4d9ffa16a13f451c3b2999e9c49e9750bf06"
+		}
+	]
+}
