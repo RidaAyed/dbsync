@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"bitbucket.org/modima/dbsync/internal/pkg/database"
+	"bitbucket.org/modima/dbsync/internal/dbsync"
 	"bitbucket.org/modima/dbsync/ttlcache"
 )
 
@@ -306,7 +306,7 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 			os.Exit(1)
 		}
 
-		// Datenbankverbindung öffnent
+		// Datenbankverbindung Ã¶ffnent
 		db, err = database.Open(dbms, url, debugLog, errorLog)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
@@ -315,7 +315,7 @@ DBMS Connection URL of the form '{mysql|sqlserver|postgres}://user:password@host
 
 		// Configure connection pool
 		db.DB.SetMaxOpenConns(cntDBConn)
-		//db.DB.SetMaxIdleConns(cntDBConn) // Kann zu "packets.go:123: write tcp 127.0.0.1:60948->127.0.0.1:3306: write: broken pipe" error führen
+		//db.DB.SetMaxIdleConns(cntDBConn) // Kann zu "packets.go:123: write tcp 127.0.0.1:60948->127.0.0.1:3306: write: broken pipe" error fÃ¼hren
 
 		// Schema aktualisieren
 		prepareDatabase()
@@ -354,7 +354,7 @@ func prepareDatabase() {
 		os.Exit(1)
 	}
 
-	// Schema für Kontakttabelle erzeugen und ggf. DB Tabelle aktualisieren
+	// Schema fÃ¼r Kontakttabelle erzeugen und ggf. DB Tabelle aktualisieren
 	if err = db.UpdateTables(campaign); err != nil {
 		errorLog.Printf("%v\n", err.Error())
 		os.Exit(1)
@@ -955,14 +955,14 @@ func eventFetcher(n int, wg *sync.WaitGroup) {
 				var contactID = splits[2]
 				var pointer = splits[3]
 
-				// MD5 Prüfung
+				// MD5 PrÃ¼fung
 				var key = fired + contactID
 				oldHash, exists := eventCache.Get(key)
 				if exists && oldHash == md5 {
 					continue
 				}
 
-				// Event counter erhöhen
+				// Event counter erhÃ¶hen
 				newEventsCurPage++
 
 				if !exists {
@@ -1212,7 +1212,7 @@ func dataSplitter(n int, wg *sync.WaitGroup) {
 
 		chanDatabaseUpdater <- database.Entity{
 			Type: "contact",
-			Data: &contact, // Alle überflüssigen Felder entfernen
+			Data: &contact, // Alle Ã¼berflÃ¼ssigen Felder entfernen
 		}
 
 		if pointerList.Pointer != nil {
@@ -1394,7 +1394,7 @@ func upsertError(entity database.Entity, err error) {
 }
 
 /******************************************
-* TICKER FÜR ZEITINTERVALLE
+* TICKER FÃœR ZEITINTERVALLE
 *******************************************/
 func ticker() {
 
@@ -1433,7 +1433,7 @@ func ticker() {
 	}
 }
 
-/** läuft zurück bis zum angegebenen Startdatum zurück und beendet sich anschließend**/
+/** lÃ¤uft zurÃ¼ck bis zum angegebenen Startdatum zurÃ¼ck und beendet sich anschlieÃŸend**/
 /*
 func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
@@ -1450,7 +1450,7 @@ func reverseTicker(startDate string, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 
-	var curDuration = time.Minute // aktuelle Schrittgröße für Zurückgehen im Zeitintervall
+	var curDuration = time.Minute // aktuelle SchrittgrÃ¶ÃŸe fÃ¼r ZurÃ¼ckgehen im Zeitintervall
 	var nextTo = time.Now().UTC()
 	var nextFrom = nextTo.Add(-1 * curDuration)
 
@@ -1463,17 +1463,17 @@ loop:
 		select {
 
 		// Dynamische Anpassung des Zeitintervalls (zwischen 1s und 1min)
-		// Ziel: Anzahl d. gefetchten Events möglichst nah an FETCH_SIZE_EVENTS pro Zeitinterval
+		// Ziel: Anzahl d. gefetchten Events mÃ¶glichst nah an FETCH_SIZE_EVENTS pro Zeitinterval
 		case eventsFetched := <-chanEventFetchDone:
 			if eventsFetched == 0 {
-				curDuration += (curDuration / 100).Truncate(time.Millisecond) // Keine Events in Zeitraum --> Zeitspanne um 1% vergrößern
+				curDuration += (curDuration / 100).Truncate(time.Millisecond) // Keine Events in Zeitraum --> Zeitspanne um 1% vergrÃ¶ÃŸern
 				if curDuration > time.Minute {
 					curDuration = time.Minute
 				} else {
 					//debugLog.Printf("ticker: Increase time interval: %v", curDuration)
 				}
 			} else {
-				var diff = fetchResult.Count - FETCH_SIZE_EVENTS // Überhängende Events
+				var diff = fetchResult.Count - FETCH_SIZE_EVENTS // ÃœberhÃ¤ngende Events
 				if diff > 0 {
 					curDuration -= (curDuration / 100 * time.Duration(diff/FETCH_SIZE_EVENTS)).Truncate(time.Millisecond)
 					if curDuration < time.Second {
@@ -1484,7 +1484,7 @@ loop:
 				}
 			}
 
-		default: // Nächster Zeitintervall
+		default: // NÃ¤chster Zeitintervall
 			if nextFrom.Before(timeStart) { // ...bis Startzeitpunkt erreicht ist
 				chanEventFetcher <- TimeRange{
 					From: timeStart,
