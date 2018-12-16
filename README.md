@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/cbarraford/dbsync.svg?branch=master)](https://travis-ci.org/cbarraford/dbsync)
+
 dbsync
 ======
 
