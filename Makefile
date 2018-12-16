@@ -1,3 +1,5 @@
+.PHONY: install build sh
+
 install:
 	docker-compose run --rm dbsync godep restore
 
