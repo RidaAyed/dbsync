@@ -14,7 +14,7 @@ Build Package
 
 4. Aktuelle Version aus Repository laden
 
-    $ dh-make-golang bitbucket.org/modima/dbsync 
+    $ dh-make-golang github.com/cbarraford/dbsync 
 
 5. Debian Verzeichnis kopieren (da es in Schritt 2 neu erzeugt wurde)
 

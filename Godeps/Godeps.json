@@ -1,15 +1,15 @@
 {
-	"ImportPath": "bitbucket.org/modima/dbsync/cmd/dbsync",
-	"GoVersion": "go1.10",
+	"ImportPath": "github.com/cbarraford/dbsync/cmd/dbsync",
+	"GoVersion": "go1.11",
 	"GodepVersion": "v80",
 	"Deps": [
 		{
-			"ImportPath": "bitbucket.org/modima/dbsync/internal/dbsync",
+			"ImportPath": "github.com/cbarraford/dbsync/internal/dbsync",
 			"Comment": "1.0.3-1-g434ab8b",
 			"Rev": "434ab8b50a95263e89ee784d270eed107fba8f87"
 		},
 		{
-			"ImportPath": "bitbucket.org/modima/dbsync/ttlcache",
+			"ImportPath": "github.com/cbarraford/dbsync/ttlcache",
 			"Rev": "7dbceb0d509466e07d5d066ea0859f1d8fc8f2fd"
 		},
 		{

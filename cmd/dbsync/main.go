@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"bitbucket.org/modima/dbsync/internal/dbsync"
-	"bitbucket.org/modima/dbsync/ttlcache"
+	. "github.com/cbarraford/dbsync/internal/dbsync"
+	"github.com/cbarraford/dbsync/ttlcache"
 )
 
 const (
