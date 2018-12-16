@@ -1,6 +1,7 @@
 .PHONY: install build sh
 
 install:
+	git submodule update --init --recursive
 	docker-compose run --rm dbsync godep restore
 
 build:
