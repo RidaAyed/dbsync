@@ -6,11 +6,11 @@
 		{
 			"ImportPath": "github.com/cbarraford/dbsync/internal/dbsync",
 			"Comment": "1.0.3-1-g434ab8b",
-			"Rev": "434ab8b50a95263e89ee784d270eed107fba8f87"
+			"Rev": "9e16cf539f43c67213580aff31807b7f0bb9248a"
 		},
 		{
 			"ImportPath": "github.com/cbarraford/dbsync/ttlcache",
-			"Rev": "7dbceb0d509466e07d5d066ea0859f1d8fc8f2fd"
+			"Rev": "9e16cf539f43c67213580aff31807b7f0bb9248a"
 		},
 		{
 			"ImportPath": "cloud.google.com/go/civil",
