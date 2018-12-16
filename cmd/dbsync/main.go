@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	. "github.com/cbarraford/dbsync/internal/dbsync"
+	database "github.com/cbarraford/dbsync/internal/dbsync"
 	"github.com/cbarraford/dbsync/ttlcache"
 )
 
