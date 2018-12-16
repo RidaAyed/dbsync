@@ -30,7 +30,17 @@ Build a executable
 make build
 ```
 
-## Interactive Shell
+## Run
+
+You can execute `dbsync` in the command line of a docker instance by use the
+`make run` command. Any flags/commands to `dbsync` put them after a
+double-dash (`--`)
+
+```sh
+make run -- -ct -c 4
+```
+
+### Interactive Run
 
 To get an interactive shell within an docker instance so you can run `./dbsync
 ...` commands.
@@ -39,3 +49,4 @@ To get an interactive shell within an docker instance so you can run `./dbsync
 ```sh
 make sh
 ```
+

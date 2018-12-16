@@ -8,3 +8,8 @@ build:
 
 sh:
 	docker-compose run --rm dbsync /bin/sh
+
+run:
+	@docker-compose run --rm dbsync ./dbsync $(filter-out $@,$(MAKECMDGOALS))
+%:
+	@:
