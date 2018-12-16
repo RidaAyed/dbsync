@@ -29,3 +29,13 @@ Build a executable
 ```sh
 make build
 ```
+
+## Interactive Shell
+
+To get an interactive shell within an docker instance so you can run `./dbsync
+...` commands.
+
+
+```sh
+make sh
+```
