@@ -3,9 +3,11 @@ language: go
 go:
   - 1.11
 
+services:
+  - docker
+
 before_install:
-  - go get github.com/tools/godep
-  - godep restore
+  - make install
 
 script:
-  - go build ./cmd/dbsync
+  - make build
