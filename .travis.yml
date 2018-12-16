@@ -1,0 +1,14 @@
+language: go
+
+go:
+  - 1.11
+  - release
+
+services:
+  - docker
+
+before_install:
+  - make install
+
+script:
+  - make build
