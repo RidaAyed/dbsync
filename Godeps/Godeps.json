@@ -1,16 +1,16 @@
 {
-	"ImportPath": "github.com/cbarraford/dbsync/cmd/dbsync",
+	"ImportPath": "github.com/ridaayed/dbsync/cmd/dbsync",
 	"GoVersion": "go1.11",
 	"GodepVersion": "v80",
 	"Deps": [
 		{
-			"ImportPath": "github.com/cbarraford/dbsync/internal/dbsync",
+			"ImportPath": "github.com/ridaayed/dbsync/internal/dbsync",
 			"Comment": "1.0.3-1-g434ab8b",
-			"Rev": "53016b5c120187b1b9a7d0cfe4a4bc9253913a80"
+			"Rev": "bb0744eb80c3eddd41eb192d73e73e2395ccd4aa"
 		},
 		{
-			"ImportPath": "github.com/cbarraford/dbsync/ttlcache",
-			"Rev": "53016b5c120187b1b9a7d0cfe4a4bc9253913a80"
+			"ImportPath": "github.com/ridaayed/dbsync/ttlcache",
+			"Rev": "bb0744eb80c3eddd41eb192d73e73e2395ccd4aa"
 		},
 		{
 			"ImportPath": "cloud.google.com/go/civil",

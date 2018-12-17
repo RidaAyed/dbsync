@@ -14,7 +14,7 @@ Build Package
 
 4. Aktuelle Version aus Repository laden
 
-    $ dh-make-golang github.com/cbarraford/dbsync 
+    $ dh-make-golang github.com/ridaayed/dbsync 
 
 5. Debian Verzeichnis kopieren (da es in Schritt 2 neu erzeugt wurde)
 

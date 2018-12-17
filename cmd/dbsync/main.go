@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	database "github.com/cbarraford/dbsync/internal/dbsync"
-	"github.com/cbarraford/dbsync/ttlcache"
+	database "github.com/ridaayed/dbsync/internal/dbsync"
+	"github.com/ridaayed/dbsync/ttlcache"
 )
 
 const (

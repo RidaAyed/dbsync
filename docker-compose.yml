@@ -5,5 +5,5 @@ services:
     build: .
     image: dbsync
     volumes:
-      - .:/go/src/github.com/cbarraford/dbsync
-    working_dir: /go/src/github.com/cbarraford/dbsync
+      - .:/go/src/github.com/ridaayed/dbsync
+    working_dir: /go/src/github.com/ridaayed/dbsync
