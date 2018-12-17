@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: dbsync
-Source: https://github.com/cbarraford/dbsync/src
+Source: https://github.com/ridaayed/dbsync/src
 Files-Excluded: vendor Godeps/_workspace
 
 Files: *
