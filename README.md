@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/ridaayed/dbsync.svg?branch=master)](https://travis-ci.org/ridaayed/dbsync)
+[![Build Status](https://travis-ci.org/RidaAyed/dbsync.svg?branch=master)](https://travis-ci.org/RidaAyed/dbsync)
 
 dbsync
 ======
