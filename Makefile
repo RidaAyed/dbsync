@@ -1,16 +1,9 @@
-.PHONY: install build sh
-
-install:
-	git submodule update --init --recursive
-	docker-compose run --rm dbsync godep restore
+.PHONY: build run
 
 build:
-	docker-compose run --rm dbsync go build ./cmd/dbsync
-
-sh:
-	docker-compose run --rm dbsync /bin/sh
+	git submodule update --init --recursive
+	docker build . -t dbsync
 
 run:
-	@docker-compose run --rm dbsync ./dbsync $(filter-out $@,$(MAKECMDGOALS))
-%:
-	@:
+	docker run --rm dbsync $(filter-out $@,$(MAKECMDGOALS))
+

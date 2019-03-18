@@ -13,23 +13,16 @@ The original README for this repo can be found at `README.original.txt`
 
 ### Requirements
 
-Ensure you have a recent version of docker and docker-compose installed on
+Ensure you have a recent version of docker installed on
 your development machine
 
-## Install
-
-Install dependencies via godep
-
-```sh
-make install
-```
 
 ## Build
 
-Build a executable 
+Build a executable
 
 ```sh
-make build
+make [build]
 ```
 
 ## Run
@@ -40,15 +33,5 @@ double-dash (`--`)
 
 ```sh
 make run -- -ct -c 4
-```
-
-### Interactive Run
-
-To get an interactive shell within an docker instance so you can run `./dbsync
-...` commands.
-
-
-```sh
-make sh
 ```
 

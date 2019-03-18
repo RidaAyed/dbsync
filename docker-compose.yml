@@ -1,9 +1,0 @@
-version: '3'
-
-services:
-  dbsync:
-    build: .
-    image: dbsync
-    volumes:
-      - .:/go/src/github.com/ridaayed/dbsync
-    working_dir: /go/src/github.com/ridaayed/dbsync
